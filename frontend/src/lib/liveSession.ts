@@ -249,7 +249,7 @@ export class LiveSession {
       setup: {
         model: `models/${this.config.model}`,
         generationConfig: {
-          responseModalities: ["AUDIO"],
+          responseModalities: ["AUDIO", "TEXT"],
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {

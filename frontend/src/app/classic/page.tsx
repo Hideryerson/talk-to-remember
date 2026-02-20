@@ -67,6 +67,7 @@ export default function ClassicPage() {
   if (state === "conversations") {
     return (
       <ConversationList
+        greetingName={profile?.name}
         onSelect={(id) => {
           setCurrentConvoId(id);
           setState("voicechat");

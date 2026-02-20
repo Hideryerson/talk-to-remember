@@ -67,6 +67,7 @@ export default function Home() {
   if (state === "conversations") {
     return (
       <ConversationList
+        greetingName={profile?.name}
         onSelect={(id) => {
           setCurrentConvoId(id);
           setState("immersive");

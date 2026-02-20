@@ -12,6 +12,7 @@ interface FloatingTranscriptProps {
   visible: boolean;
   currentlySpeaking?: string | null;
   isPreparing?: boolean;
+  pendingAssistantText?: string;
 }
 
 export default function FloatingTranscript({
@@ -19,6 +20,7 @@ export default function FloatingTranscript({
   visible,
   currentlySpeaking,
   isPreparing = false,
+  pendingAssistantText = "",
 }: FloatingTranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -30,11 +32,19 @@ export default function FloatingTranscript({
 
   if (!visible) return null;
 
+  const normalizedPending = pendingAssistantText.replace(/\s+/g, " ").trim();
+
   if (messages.length === 0) {
     return (
       <div className="fixed bottom-32 left-4 right-4 z-30 safe-bottom transcript-section">
         <div className="transcript-bubble px-4 py-3">
-          {isPreparing ? (
+          {normalizedPending ? (
+            <div className="flex justify-start">
+              <div className="max-w-[85%] px-4 py-2.5 text-sm leading-relaxed message-model">
+                {normalizedPending}
+              </div>
+            </div>
+          ) : isPreparing ? (
             <div className="flex items-center gap-2.5 text-[#1d1d1f]">
               <div className="preparing-dots" aria-hidden="true">
                 <span />
@@ -51,8 +61,15 @@ export default function FloatingTranscript({
     );
   }
 
-  // Only show last 3 messages for minimal UI
+  // Only show last 3 stored messages for minimal UI, plus current live partial transcript.
   const recentMessages = messages.slice(-3);
+  const renderMessages = [...recentMessages];
+  if (normalizedPending) {
+    const last = renderMessages[renderMessages.length - 1];
+    if (!(last && last.role === "model" && last.text.replace(/\s+/g, " ").trim() === normalizedPending)) {
+      renderMessages.push({ role: "model", text: normalizedPending });
+    }
+  }
 
   return (
     <div className="fixed bottom-32 left-4 right-4 z-30 safe-bottom transcript-section">
@@ -61,9 +78,9 @@ export default function FloatingTranscript({
         className="transcript-bubble p-2 max-h-[40vh] overflow-y-auto no-scrollbar ios-transition"
       >
         <div className="space-y-3">
-          {recentMessages.map((msg, i) => (
+          {renderMessages.map((msg, i) => (
             <div
-              key={messages.length - recentMessages.length + i}
+              key={`transcript-${messages.length - renderMessages.length + i}`}
               className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div

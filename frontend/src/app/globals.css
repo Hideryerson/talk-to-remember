@@ -143,8 +143,8 @@ body {
 .listening-indicator {
   display: flex;
   gap: 3px;
-  align-items: flex-end;
-  height: 18px;
+  align-items: center;
+  height: 16px;
 }
 
 .listening-indicator span {

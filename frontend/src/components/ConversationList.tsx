@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { getToken, clearToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
+import { ChevronRight, Image as ImageIcon, LogOut, MessageCircle, Pencil, Trash2 } from "lucide-react";
 
 interface ConvoSummary {
   id: string;
@@ -18,67 +19,10 @@ interface ConvoSummary {
 interface Props {
   onSelect: (id: string) => void;
   onNew: () => void;
+  greetingName?: string;
 }
 
-// SF Symbols style icons
-const SFSymbols = {
-  // plus.circle.fill - New
-  plusCircle: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-      <circle cx="12" cy="12" r="10" />
-      <line x1="12" y1="8" x2="12" y2="16" stroke="white" strokeWidth="2" strokeLinecap="round" />
-      <line x1="8" y1="12" x2="16" y2="12" stroke="white" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  ),
-  // gearshape - Settings
-  gear: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-    </svg>
-  ),
-  // photo.fill - Photo
-  photo: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-      <rect x="3" y="5" width="18" height="14" rx="2" />
-      <circle cx="8.5" cy="10.5" r="1.5" fill="white" />
-      <path d="M21 19l-5-5-3 3-4-4-6 6" fill="none" stroke="white" strokeWidth="2" />
-    </svg>
-  ),
-  // bubble.left.fill - Chat
-  chat: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-    </svg>
-  ),
-  // pencil - Edit
-  pencil: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-      <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-    </svg>
-  ),
-  // trash - Delete
-  trash: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
-    </svg>
-  ),
-  // rectangle.portrait.and.arrow.right - Logout
-  logout: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
-    </svg>
-  ),
-  // chevron.right - Arrow
-  chevronRight: (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 18l6-6-6-6" />
-    </svg>
-  ),
-};
-
-export default function ConversationList({ onSelect, onNew }: Props) {
+export default function ConversationList({ onSelect, onNew, greetingName }: Props) {
   const [conversations, setConversations] = useState<ConvoSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -242,13 +186,15 @@ export default function ConversationList({ onSelect, onNew }: Props) {
       {/* Header - ChatGPT style */}
       <header className="bg-white border-b border-gray-200 px-4 py-4 safe-top">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold tracking-tight text-[#1d1d1f]">RE</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-[#1d1d1f]">
+            {`Hi, ${(greetingName || "").trim() || "there"}`}
+          </h1>
           <button
             onClick={handleLogout}
             className="p-2 rounded-full hover:bg-gray-100 text-[#86868b] transition-colors"
             aria-label="Logout"
           >
-            {SFSymbols.logout}
+            <LogOut size={18} strokeWidth={2} />
           </button>
         </div>
       </header>
@@ -273,7 +219,7 @@ export default function ConversationList({ onSelect, onNew }: Props) {
                 onClick={() => setDeleteConfirmId(c.id)}
                 className="w-full h-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white"
               >
-                {SFSymbols.trash}
+                <Trash2 size={16} strokeWidth={2} />
               </button>
             </div>
 
@@ -311,7 +257,7 @@ export default function ConversationList({ onSelect, onNew }: Props) {
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
                     c.hasImage ? "bg-blue-100 text-[#007aff]" : "bg-gray-100 text-[#86868b]"
                   }`}>
-                    {c.hasImage ? SFSymbols.photo : SFSymbols.chat}
+                    {c.hasImage ? <ImageIcon size={18} strokeWidth={2} /> : <MessageCircle size={18} strokeWidth={2} />}
                   </div>
 
                   {/* Content */}
@@ -343,10 +289,10 @@ export default function ConversationList({ onSelect, onNew }: Props) {
                       className="p-2 rounded-full hover:bg-gray-100 text-[#86868b]"
                       title="Rename"
                     >
-                      {SFSymbols.pencil}
+                      <Pencil size={16} strokeWidth={2} />
                     </button>
                     <span className="text-[#c7c7cc]">
-                      {SFSymbols.chevronRight}
+                      <ChevronRight size={16} strokeWidth={2} />
                     </span>
                   </div>
                 </div>
@@ -358,7 +304,7 @@ export default function ConversationList({ onSelect, onNew }: Props) {
         {conversations.length === 0 && (
           <div className="text-center text-[#86868b] py-12">
             <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-blue-100 flex items-center justify-center text-[#007aff]">
-              {SFSymbols.photo}
+              <ImageIcon size={24} strokeWidth={2} />
             </div>
             <p className="text-lg font-medium text-[#1d1d1f]">No conversations yet</p>
             <p className="text-sm mt-1">Start a new recall session!</p>
@@ -372,7 +318,7 @@ export default function ConversationList({ onSelect, onNew }: Props) {
           onClick={onNew}
           className="w-full bg-[#007aff] hover:bg-[#0066d6] active:bg-[#0055b3] py-3.5 rounded-xl font-semibold text-white transition-colors"
         >
-          Start New Session
+          New Conversation
         </button>
       </div>
 

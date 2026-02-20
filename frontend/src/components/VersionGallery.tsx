@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CheckCircle2, ChevronLeft, X } from "lucide-react";
 
 interface ImageVersion {
   dataUrl: string;
@@ -15,30 +16,6 @@ interface VersionGalleryProps {
   onClose: () => void;
   onUseVersion?: (index: number) => void; // Callback when user confirms using a version
 }
-
-// SF Symbols style icons
-const SFSymbols = {
-  // xmark - Close
-  xmark: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="18" y1="6" x2="6" y2="18" />
-      <line x1="6" y1="6" x2="18" y2="18" />
-    </svg>
-  ),
-  // chevron.left - Back
-  chevronLeft: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M15 18l-6-6 6-6" />
-    </svg>
-  ),
-  // checkmark.circle.fill - Selected
-  checkmarkCircle: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="#007aff">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M8 12l3 3 5-6" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  ),
-};
 
 export default function VersionGallery({
   versions,
@@ -99,7 +76,7 @@ export default function VersionGallery({
               aria-label="Back to gallery"
               type="button"
             >
-              {SFSymbols.chevronLeft}
+              <ChevronLeft size={20} strokeWidth={2.5} />
             </button>
             <span className="text-white font-medium bg-white/20 backdrop-blur-sm px-4 py-1.5 rounded-full">
               {fullscreenIndex === 0 ? "Original" : `Version ${fullscreenIndex}`}
@@ -110,7 +87,7 @@ export default function VersionGallery({
               aria-label="Close gallery"
               type="button"
             >
-              {SFSymbols.xmark}
+              <X size={20} strokeWidth={2.5} />
             </button>
           </div>
         </div>
@@ -147,7 +124,7 @@ export default function VersionGallery({
             aria-label="Back to conversation"
             type="button"
           >
-            {SFSymbols.xmark}
+            <X size={20} strokeWidth={2.5} />
           </button>
         </div>
       </div>
@@ -201,7 +178,7 @@ export default function VersionGallery({
                 {/* Selected indicator */}
                 {index === selectedIndex && (
                   <div className="absolute top-1 right-1">
-                    {SFSymbols.checkmarkCircle}
+                    <CheckCircle2 size={20} strokeWidth={2.2} className="text-[#007aff] fill-white" />
                   </div>
                 )}
               </button>

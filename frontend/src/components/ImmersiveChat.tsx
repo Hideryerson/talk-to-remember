@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { getToken } from "@/lib/auth";
 import { apiUrl, getBackendWsUrl } from "@/lib/api";
+import { Camera, ChevronLeft, RotateCcw, RotateCw, Smartphone, X } from "lucide-react";
 import {
   LiveSession,
   DEFAULT_SYSTEM_INSTRUCTION,
@@ -27,54 +28,6 @@ const DEBUG = true;
 function log(...args: any[]) {
   if (DEBUG) console.log("[ImmersiveChat]", ...args);
 }
-
-// SF Symbols style icons
-const SFSymbols = {
-  // chevron.left - Back
-  chevronLeft: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M15 18l-6-6 6-6" />
-    </svg>
-  ),
-  // camera.fill - Upload photo
-  cameraFill: (
-    <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 15.2a3.2 3.2 0 100-6.4 3.2 3.2 0 000 6.4z" />
-      <path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" />
-    </svg>
-  ),
-  // iphone landscape hint
-  rotatePhone: (
-    <svg width="72" height="72" viewBox="0 0 72 72" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="13" y="16" width="23" height="40" rx="5" opacity="0.35" />
-      <rect x="36" y="25" width="23" height="23" rx="5" />
-      <path className="rotate-hint-arrow" d="M22 10c8-6 20-6 28 2" />
-      <path className="rotate-hint-arrow" d="M50 12l-1.5-5 5 1.5" />
-    </svg>
-  ),
-  // arrow.clockwise - Continue
-  arrowClockwise: (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8" />
-      <path d="M3 3v5h5" />
-    </svg>
-  ),
-  // ellipsis.message - Preparing
-  preparing: (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" />
-      <circle cx="8" cy="10" r="1" fill="currentColor" />
-      <circle cx="12" cy="10" r="1" fill="currentColor" />
-      <circle cx="16" cy="10" r="1" fill="currentColor" />
-    </svg>
-  ),
-  // xmark
-  xmark: (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-      <path d="M6 6l12 12M18 6L6 18" />
-    </svg>
-  ),
-};
 
 export default function ImmersiveChat({
   conversationId,
@@ -103,6 +56,7 @@ export default function ImmersiveChat({
   const [liveError, setLiveError] = useState<string | null>(null);
   const [awaitingFirstAssistantTurn, setAwaitingFirstAssistantTurn] = useState(false);
   const [listeningLevel, setListeningLevel] = useState(0);
+  const [pendingAssistantTranscript, setPendingAssistantTranscript] = useState("");
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -116,6 +70,7 @@ export default function ImmersiveChat({
   const imageMimeTypeRef = useRef(imageMimeType);
   const awaitingFirstAssistantTurnRef = useRef(false);
   const assistantAudioInCurrentTurnRef = useRef(false);
+  const pendingAssistantTranscriptRef = useRef("");
 
   // Keep refs in sync
   useEffect(() => {
@@ -126,7 +81,8 @@ export default function ImmersiveChat({
     isEditingRef.current = isEditing;
     imageMimeTypeRef.current = imageMimeType;
     awaitingFirstAssistantTurnRef.current = awaitingFirstAssistantTurn;
-  }, [messages, imageVersions, convoId, currentImageIndex, isEditing, imageMimeType, awaitingFirstAssistantTurn]);
+    pendingAssistantTranscriptRef.current = pendingAssistantTranscript;
+  }, [messages, imageVersions, convoId, currentImageIndex, isEditing, imageMimeType, awaitingFirstAssistantTurn, pendingAssistantTranscript]);
 
   // Decay mic level so listening waveform reflects real input and settles smoothly.
   useEffect(() => {
@@ -276,8 +232,34 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     setLiveError(null);
     setListeningLevel(0);
     setAwaitingFirstAssistantTurn(true);
+    setPendingAssistantTranscript("");
     awaitingFirstAssistantTurnRef.current = true;
     assistantAudioInCurrentTurnRef.current = false;
+    pendingAssistantTranscriptRef.current = "";
+
+    const commitAssistantMessage = (text: string) => {
+      const normalized = text.replace(/\s+/g, " ").trim();
+      if (!normalized) return;
+      const lastMsg = messagesRef.current[messagesRef.current.length - 1];
+      if (lastMsg?.role === "model" && lastMsg.text.replace(/\s+/g, " ").trim() === normalized) {
+        return;
+      }
+      const newMsg: ChatMessage = { role: "model", text: normalized };
+      const updated = [...messagesRef.current, newMsg];
+      setMessages(updated);
+      messagesRef.current = updated;
+      setCurrentlySpeaking(normalized);
+      saveConversation(updated);
+    };
+
+    const mergeTranscriptChunk = (prev: string, chunk: string) => {
+      const cleanedChunk = chunk.replace(/\s+/g, " ").trim();
+      if (!cleanedChunk) return prev;
+      if (!prev) return cleanedChunk;
+      if (cleanedChunk.startsWith(prev)) return cleanedChunk;
+      if (prev.endsWith(cleanedChunk)) return prev;
+      return `${prev}${cleanedChunk.startsWith("'") || cleanedChunk.startsWith(",") || cleanedChunk.startsWith(".") ? "" : " "}${cleanedChunk}`.trim();
+    };
 
     const sessionCallbacks: LiveSessionCallbacks = {
       onConnected: () => {
@@ -299,7 +281,9 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
             setLiveError("Microphone failed to start. Check browser microphone permission.");
             setSessionState("idle");
             setAwaitingFirstAssistantTurn(false);
+            setPendingAssistantTranscript("");
             awaitingFirstAssistantTurnRef.current = false;
+            pendingAssistantTranscriptRef.current = "";
           }
         });
       },
@@ -308,20 +292,25 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         setListeningLevel(0);
         setCurrentlySpeaking(null);
         setAwaitingFirstAssistantTurn(false);
+        setPendingAssistantTranscript("");
         awaitingFirstAssistantTurnRef.current = false;
         assistantAudioInCurrentTurnRef.current = false;
+        pendingAssistantTranscriptRef.current = "";
         setSessionState("idle");
       },
       onTextReceived: (text, isFinal) => {
         log("Text received:", text, "final:", isFinal);
-        if (isFinal && text.trim()) {
-          // Add AI message
-          const newMsg: ChatMessage = { role: "model", text };
-          const updated = [...messagesRef.current, newMsg];
-          setMessages(updated);
-          messagesRef.current = updated;
-          setCurrentlySpeaking(text);
-          saveConversation(updated);
+        const merged = mergeTranscriptChunk(pendingAssistantTranscriptRef.current, text);
+        pendingAssistantTranscriptRef.current = merged;
+        setPendingAssistantTranscript(merged);
+        if (merged) {
+          setCurrentlySpeaking(merged);
+        }
+
+        if (isFinal && merged) {
+          commitAssistantMessage(merged);
+          setPendingAssistantTranscript("");
+          pendingAssistantTranscriptRef.current = "";
         }
       },
       onAudioReceived: () => {
@@ -373,16 +362,20 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         setListeningLevel(0);
         setCurrentlySpeaking(null);
         setAwaitingFirstAssistantTurn(false);
+        setPendingAssistantTranscript("");
         awaitingFirstAssistantTurnRef.current = false;
         assistantAudioInCurrentTurnRef.current = false;
+        pendingAssistantTranscriptRef.current = "";
         setSessionState("idle");
       },
       onInterrupted: () => {
         log("Response interrupted");
         setCurrentlySpeaking(null);
         setAwaitingFirstAssistantTurn(false);
+        setPendingAssistantTranscript("");
         awaitingFirstAssistantTurnRef.current = false;
         assistantAudioInCurrentTurnRef.current = false;
+        pendingAssistantTranscriptRef.current = "";
         setSessionState("listening");
       },
       onPlaybackComplete: () => {
@@ -395,6 +388,12 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         setSessionState((prev) => (prev === "editing" ? prev : "listening"));
       },
       onTurnComplete: () => {
+        const pendingText = pendingAssistantTranscriptRef.current.replace(/\s+/g, " ").trim();
+        if (pendingText) {
+          commitAssistantMessage(pendingText);
+          setPendingAssistantTranscript("");
+          pendingAssistantTranscriptRef.current = "";
+        }
         if (awaitingFirstAssistantTurnRef.current && !assistantAudioInCurrentTurnRef.current) {
           setAwaitingFirstAssistantTurn(false);
           awaitingFirstAssistantTurnRef.current = false;
@@ -444,8 +443,10 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       }
       setListeningLevel(0);
       setAwaitingFirstAssistantTurn(false);
+      setPendingAssistantTranscript("");
       awaitingFirstAssistantTurnRef.current = false;
       assistantAudioInCurrentTurnRef.current = false;
+      pendingAssistantTranscriptRef.current = "";
       setSessionState("idle");
     }
   }, [profile]);
@@ -468,6 +469,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       currentImageIndexRef.current = initialIndex;
       setMessages(convo.messages || []);
       messagesRef.current = convo.messages || [];
+      setPendingAssistantTranscript("");
+      pendingAssistantTranscriptRef.current = "";
 
       // Check image aspect ratio
       if (convo.imageDataUrl) {
@@ -613,6 +616,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       imageVersionsRef.current = [firstVersion];
       setMessages([]);
       messagesRef.current = [];
+      setPendingAssistantTranscript("");
+      pendingAssistantTranscriptRef.current = "";
 
       // Create conversation on backend
       try {
@@ -791,6 +796,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       : image;
   const transcriptPreparing =
     messages.length === 0 &&
+    pendingAssistantTranscript.trim().length === 0 &&
     (sessionState === "connecting" ||
       sessionState === "speaking" ||
       sessionState === "listening" ||
@@ -816,7 +822,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
             className="w-10 h-10 rounded-full bg-black/5 flex items-center justify-center text-[#1d1d1f] active:scale-95 transition-transform"
             aria-label="Back"
           >
-            {SFSymbols.chevronLeft}
+            <ChevronLeft size={20} strokeWidth={2.5} />
           </button>
           <h1 className="text-lg font-semibold text-[#1d1d1f]">New Session</h1>
           <div className="w-10" />
@@ -840,7 +846,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
             className="bg-white w-full max-w-sm aspect-square rounded-3xl flex flex-col items-center justify-center gap-4 border-2 border-dashed border-gray-300 hover:border-[#007aff] hover:bg-blue-50/30 active:scale-[0.98] transition-all"
           >
             <div className="w-20 h-20 rounded-full bg-blue-100 flex items-center justify-center text-[#007aff]">
-              {SFSymbols.cameraFill}
+              <Camera size={40} strokeWidth={2.2} />
             </div>
             <div className="text-center">
               <p className="text-lg font-medium text-[#1d1d1f]">Upload a photo</p>
@@ -896,7 +902,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
               className="w-7 h-7 rounded-full bg-red-100 border border-red-200 flex items-center justify-center text-red-500 hover:text-red-700"
               aria-label="Dismiss error"
             >
-              {SFSymbols.xmark}
+              <X size={18} strokeWidth={2.4} />
             </button>
           </div>
         </div>
@@ -909,7 +915,10 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
           onClick={() => setShowRotateHint(false)}
         >
           <div className="rotate-phone-icon text-white">
-            {SFSymbols.rotatePhone}
+            <div className="relative w-[72px] h-[72px] flex items-center justify-center">
+              <Smartphone size={64} strokeWidth={1.8} className="opacity-75" />
+              <RotateCw size={28} strokeWidth={2.2} className="rotate-hint-arrow absolute -top-1.5 -right-1.5" />
+            </div>
           </div>
           <p className="text-white text-lg font-medium text-center px-8">
             Rotate your phone for a better view
@@ -925,7 +934,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
           <div className="bg-white rounded-3xl p-6 max-w-sm w-full text-center shadow-xl">
             <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-blue-100 flex items-center justify-center text-[#007aff]">
-              {SFSymbols.arrowClockwise}
+              <RotateCcw size={24} strokeWidth={2.2} />
             </div>
             <h2 className="text-xl font-semibold text-[#1d1d1f] mb-2">
               Welcome back!
@@ -967,6 +976,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         visible={showTranscript}
         currentlySpeaking={currentlySpeaking}
         isPreparing={transcriptPreparing}
+        pendingAssistantText={pendingAssistantTranscript}
       />
 
       {/* Control bar */}
