@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { getToken } from "@/lib/auth";
 import { apiUrl, getBackendWsUrl } from "@/lib/api";
-import { Camera, ChevronLeft, RotateCcw, RotateCw, Smartphone, X } from "lucide-react";
+import { Camera, ChevronLeft, RotateCcw, X } from "lucide-react";
 import {
   LiveSession,
   DEFAULT_SYSTEM_INSTRUCTION,
@@ -47,8 +47,6 @@ export default function ImmersiveChat({
   const [hydrated, setHydrated] = useState(false);
   const [currentlySpeaking, setCurrentlySpeaking] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [showRotateHint, setShowRotateHint] = useState(false);
-  const [imageAspectRatio, setImageAspectRatio] = useState(1);
   const [showWelcomeBack, setShowWelcomeBack] = useState(false);
   const [isLandscape, setIsLandscape] = useState(false);
   const [isNewUpload, setIsNewUpload] = useState(false);
@@ -101,18 +99,13 @@ export default function ImmersiveChat({
     const checkOrientation = () => {
       const isLand = window.matchMedia("(orientation: landscape)").matches;
       setIsLandscape(isLand);
-
-      // Hide rotate hint when landscape
-      if (isLand && imageAspectRatio > 1.2) {
-        setShowRotateHint(false);
-      }
     };
 
     checkOrientation();
     const mq = window.matchMedia("(orientation: landscape)");
     mq.addEventListener("change", checkOrientation);
     return () => mq.removeEventListener("change", checkOrientation);
-  }, [imageAspectRatio]);
+  }, []);
 
   // Hydrate existing conversation
   useEffect(() => {
@@ -472,15 +465,6 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       setPendingAssistantTranscript("");
       pendingAssistantTranscriptRef.current = "";
 
-      // Check image aspect ratio
-      if (convo.imageDataUrl) {
-        const img = new Image();
-        img.onload = () => {
-          const ratio = img.width / img.height;
-          setImageAspectRatio(ratio);
-        };
-        img.src = convo.imageDataUrl;
-      }
     } catch (err) {
       console.error("Hydrate error:", err);
     } finally {
@@ -591,19 +575,6 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       const dataUrl = ev.target?.result as string;
       setImage(dataUrl);
       setIsNewUpload(true);
-
-      // Check image aspect ratio for rotation hint
-      const img = new Image();
-      img.onload = () => {
-        const ratio = img.width / img.height;
-        setImageAspectRatio(ratio);
-
-        // Landscape photo + portrait device = show hint
-        if (ratio > 1.2 && window.matchMedia("(orientation: portrait)").matches) {
-          setShowRotateHint(true);
-        }
-      };
-      img.src = dataUrl;
 
       const firstVersion: ImageVersion = {
         dataUrl,
@@ -905,27 +876,6 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
               <X size={18} strokeWidth={2.4} />
             </button>
           </div>
-        </div>
-      )}
-
-      {/* Rotate phone hint */}
-      {showRotateHint && (
-        <div
-          className="fixed inset-0 z-50 rotate-hint-overlay flex flex-col items-center justify-center gap-6"
-          onClick={() => setShowRotateHint(false)}
-        >
-          <div className="rotate-phone-icon text-white">
-            <div className="relative w-[72px] h-[72px] flex items-center justify-center">
-              <Smartphone size={64} strokeWidth={1.8} className="opacity-75" />
-              <RotateCw size={28} strokeWidth={2.2} className="rotate-hint-arrow absolute -top-1.5 -right-1.5" />
-            </div>
-          </div>
-          <p className="text-white text-lg font-medium text-center px-8">
-            Rotate your phone for a better view
-          </p>
-          <p className="text-white/60 text-sm">
-            Tap anywhere to dismiss
-          </p>
         </div>
       )}
 

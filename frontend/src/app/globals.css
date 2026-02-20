@@ -236,41 +236,6 @@ body {
   }
 }
 
-/* ===== Rotate Phone Hint Animation ===== */
-@keyframes rotate-device-hint {
-  0%, 100% {
-    transform: translateY(0);
-    opacity: 0.9;
-  }
-  50% {
-    transform: translateY(-4px);
-    opacity: 1;
-  }
-}
-
-@keyframes rotate-arrow-hint {
-  0%, 100% {
-    opacity: 0.45;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-.rotate-phone-icon {
-  animation: rotate-device-hint 1.9s ease-in-out infinite;
-}
-
-.rotate-hint-arrow {
-  animation: rotate-arrow-hint 1.2s ease-in-out infinite;
-}
-
-.rotate-hint-overlay {
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-}
-
 /* ===== Landscape Mode Styles ===== */
 @media (orientation: landscape) {
   .immersive-layout {

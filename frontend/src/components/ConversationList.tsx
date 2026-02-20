@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { getToken, clearToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 import { ChevronRight, Image as ImageIcon, LogOut, MessageCircle, Pencil, Trash2 } from "lucide-react";
@@ -13,6 +13,7 @@ interface ConvoSummary {
   versionCount: number;
   preview: string;
   hasImage: boolean;
+  thumbnailDataUrl?: string | null;
   name?: string;
 }
 
@@ -137,14 +138,22 @@ export default function ConversationList({ onSelect, onNew, greetingName }: Prop
     window.location.reload();
   };
 
-  const getDisplayName = (c: ConvoSummary) => {
-    if (c.name) return c.name;
-    return new Date(c.createdAt).toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
+  const defaultConversationNames = useMemo(() => {
+    const sortedByCreatedAt = [...conversations].sort((a, b) => {
+      const left = new Date(a.createdAt).getTime();
+      const right = new Date(b.createdAt).getTime();
+      return left - right;
     });
+    const nameMap = new Map<string, string>();
+    sortedByCreatedAt.forEach((conversation, index) => {
+      nameMap.set(conversation.id, `Conversation ${index + 1}`);
+    });
+    return nameMap;
+  }, [conversations]);
+
+  const getDisplayName = (c: ConvoSummary) => {
+    if (typeof c.name === "string" && c.name.trim()) return c.name.trim();
+    return defaultConversationNames.get(c.id) || "Conversation";
   };
 
   const getRelativeTime = (dateStr: string) => {
@@ -167,10 +176,10 @@ export default function ConversationList({ onSelect, onNew, greetingName }: Prop
     }
   };
 
-  const handleStartRename = (e: React.MouseEvent, c: ConvoSummary) => {
-    e.stopPropagation();
-    setEditName(c.name || getDisplayName(c));
+  const handleStartRename = (c: ConvoSummary) => {
+    setEditName(getDisplayName(c));
     setEditingId(c.id);
+    setSwipedId(null);
   };
 
   if (loading) {
@@ -209,15 +218,29 @@ export default function ConversationList({ onSelect, onNew, greetingName }: Prop
             onTouchMove={(e) => handleTouchMove(e, c.id)}
             onTouchEnd={(e) => handleTouchEnd(e, c.id)}
           >
-            {/* Delete button (revealed on swipe) */}
+            {/* Swipe actions (revealed on swipe) */}
             <div
               className={`absolute right-0 top-0 bottom-0 flex items-center transition-all duration-200 ${
-                swipedId === c.id ? "w-20" : "w-0"
+                swipedId === c.id ? "w-40" : "w-0"
               } overflow-hidden`}
             >
               <button
-                onClick={() => setDeleteConfirmId(c.id)}
-                className="w-full h-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleStartRename(c);
+                }}
+                className="w-20 h-full bg-[#007aff] hover:bg-[#0066d6] flex items-center justify-center text-white"
+                aria-label="Rename conversation"
+              >
+                <Pencil size={16} strokeWidth={2} />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDeleteConfirmId(c.id);
+                }}
+                className="w-20 h-full bg-red-500 hover:bg-red-600 flex items-center justify-center text-white"
+                aria-label="Delete conversation"
               >
                 <Trash2 size={16} strokeWidth={2} />
               </button>
@@ -227,7 +250,7 @@ export default function ConversationList({ onSelect, onNew, greetingName }: Prop
             <div
               onClick={() => handleCardClick(c)}
               className={`bg-white hover:bg-gray-50 p-4 transition-all duration-200 cursor-pointer shadow-sm ${
-                swipedId === c.id ? "-translate-x-20" : "translate-x-0"
+                swipedId === c.id ? "-translate-x-40" : "translate-x-0"
               }`}
             >
               {editingId === c.id ? (
@@ -253,11 +276,19 @@ export default function ConversationList({ onSelect, onNew, greetingName }: Prop
               ) : (
                 // Normal display
                 <div className="flex items-center gap-3">
-                  {/* Icon */}
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                    c.hasImage ? "bg-blue-100 text-[#007aff]" : "bg-gray-100 text-[#86868b]"
-                  }`}>
-                    {c.hasImage ? <ImageIcon size={18} strokeWidth={2} /> : <MessageCircle size={18} strokeWidth={2} />}
+                  {/* Thumbnail */}
+                  <div className="w-12 h-12 rounded-xl overflow-hidden bg-[#f2f2f7] border border-black/5 shrink-0">
+                    {c.thumbnailDataUrl ? (
+                      <img
+                        src={c.thumbnailDataUrl}
+                        alt={getDisplayName(c)}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-[#86868b]">
+                        {c.hasImage ? <ImageIcon size={18} strokeWidth={2} /> : <MessageCircle size={18} strokeWidth={2} />}
+                      </div>
+                    )}
                   </div>
 
                   {/* Content */}
@@ -282,15 +313,7 @@ export default function ConversationList({ onSelect, onNew, greetingName }: Prop
                   </div>
 
                   {/* Arrow and actions */}
-                  <div className="flex items-center gap-1">
-                    {/* Rename button */}
-                    <button
-                      onClick={(e) => handleStartRename(e, c)}
-                      className="p-2 rounded-full hover:bg-gray-100 text-[#86868b]"
-                      title="Rename"
-                    >
-                      <Pencil size={16} strokeWidth={2} />
-                    </button>
+                  <div className="flex items-center">
                     <span className="text-[#c7c7cc]">
                       <ChevronRight size={16} strokeWidth={2} />
                     </span>

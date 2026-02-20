@@ -379,6 +379,10 @@ app.get("/api/conversations", requireAuth, async (req, res) => {
 
     const userConversations = (rows || []).map((row) => {
       const conversation = mapConversationRow(row);
+      const thumbnailDataUrl =
+        conversation.imageVersions.find((version) => typeof version?.dataUrl === "string" && version.dataUrl)?.dataUrl ||
+        conversation.imageDataUrl ||
+        null;
       return {
         id: conversation.id,
         createdAt: conversation.createdAt,
@@ -388,7 +392,8 @@ app.get("/api/conversations", requireAuth, async (req, res) => {
         preview:
           conversation.messages.find((message) => message.role === "model")?.text.slice(0, 100) ||
           "",
-        hasImage: Boolean(conversation.imageDataUrl),
+        hasImage: Boolean(thumbnailDataUrl),
+        thumbnailDataUrl,
         name: conversation.name,
       };
     });

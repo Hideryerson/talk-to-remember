@@ -249,7 +249,7 @@ export class LiveSession {
       setup: {
         model: `models/${this.config.model}`,
         generationConfig: {
-          responseModalities: ["AUDIO", "TEXT"],
+          responseModalities: ["AUDIO"],
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
@@ -335,6 +335,23 @@ export class LiveSession {
           const audioBytes = this.base64ToArrayBuffer(content.audioContent);
           this.callbacks.onAudioReceived?.(audioBytes);
           this.queueAudio(audioBytes);
+        }
+
+        const outputTranscriptionText =
+          content.outputTranscription?.text ||
+          content.outputTranscription?.transcript ||
+          content.outputTranscription?.partialText ||
+          content.outputAudioTranscription?.text ||
+          content.outputAudioTranscription?.transcript ||
+          content.outputAudioTranscription?.partialText;
+        if (typeof outputTranscriptionText === "string" && outputTranscriptionText.trim()) {
+          const isOutputFinal =
+            Boolean(content.outputTranscription?.finished) ||
+            Boolean(content.outputTranscription?.isFinal) ||
+            Boolean(content.outputAudioTranscription?.finished) ||
+            Boolean(content.outputAudioTranscription?.isFinal) ||
+            Boolean(content.turnComplete);
+          this.callbacks.onTextReceived?.(outputTranscriptionText, isOutputFinal);
         }
 
         // Interrupted
