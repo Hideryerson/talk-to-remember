@@ -1,0 +1,31 @@
+{
+  "name": "recall-app",
+  "version": "1.0.0",
+  "description": "Voice-guided photo recall system",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next dev",
+    "dev:network": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start",
+    "start:network": "next start --hostname 0.0.0.0",
+    "clean": "rm -rf .next node_modules/.cache"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/node": "^25.0.10",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
+    "heic2any": "^0.0.4",
+    "next": "^16.1.6",
+    "postcss": "^8.5.6",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.9.3"
+  }
+}

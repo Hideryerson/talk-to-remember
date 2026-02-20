@@ -1,0 +1,96 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { isLoggedIn, getToken } from "@/lib/auth";
+import { apiUrl } from "@/lib/api";
+import type { UserProfile } from "@/lib/types";
+import AuthForm from "@/components/AuthForm";
+import Onboarding from "@/components/Onboarding";
+import ConversationList from "@/components/ConversationList";
+import ImmersiveChat from "@/components/ImmersiveChat";
+
+type AppState = "loading" | "auth" | "onboarding" | "conversations" | "immersive";
+
+export default function Home() {
+  const [state, setState] = useState<AppState>("loading");
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [currentConvoId, setCurrentConvoId] = useState<string | null>(null);
+
+  useEffect(() => {
+    checkState();
+  }, []);
+
+  const checkState = async () => {
+    if (!isLoggedIn()) {
+      setState("auth");
+      return;
+    }
+
+    try {
+      const res = await fetch(apiUrl("/api/profile"), {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (res.ok) {
+        const p = await res.json();
+        setProfile(p);
+        setState(p.onboardingComplete ? "conversations" : "onboarding");
+      } else {
+        setState("auth");
+      }
+    } catch {
+      setState("auth");
+    }
+  };
+
+  if (state === "loading") {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-pulse text-xl">🌙</div>
+      </div>
+    );
+  }
+
+  if (state === "auth") {
+    return <AuthForm onSuccess={checkState} />;
+  }
+
+  if (state === "onboarding") {
+    return (
+      <Onboarding
+        onComplete={() => {
+          checkState(); // re-fetch profile then go to conversations
+        }}
+      />
+    );
+  }
+
+  if (state === "conversations") {
+    return (
+      <ConversationList
+        onSelect={(id) => {
+          setCurrentConvoId(id);
+          setState("immersive");
+        }}
+        onNew={() => {
+          setCurrentConvoId(null);
+          setState("immersive");
+        }}
+      />
+    );
+  }
+
+  if (state === "immersive" && profile) {
+    return (
+      <ImmersiveChat
+        conversationId={currentConvoId}
+        profile={profile}
+        onBack={() => {
+          setCurrentConvoId(null);
+          setState("conversations");
+        }}
+      />
+    );
+  }
+
+  return null;
+}
