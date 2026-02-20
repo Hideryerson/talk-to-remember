@@ -2,8 +2,8 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Daily Recall",
-  description: "Voice-guided photo recall companion",
+  title: "RE",
+  description: "Recall the moment. Relive the story.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,

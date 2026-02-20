@@ -247,7 +247,7 @@ export default function ConversationList({ onSelect, onNew }: Props) {
       {/* Header - ChatGPT style */}
       <header className="bg-white border-b border-gray-200 px-4 py-4 safe-top">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-[#1d1d1f]">Daily Recall</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-[#1d1d1f]">RE</h1>
           <button
             onClick={handleLogout}
             className="p-2 rounded-full hover:bg-gray-100 text-[#86868b] transition-colors"
@@ -342,8 +342,8 @@ export default function ConversationList({ onSelect, onNew }: Props) {
 
                   {/* Arrow and actions */}
                   <div className="flex items-center gap-1">
-                    {/* Desktop: Edit/Delete buttons */}
-                    <div className="hidden sm:flex gap-1">
+                    {/* Rename/Delete buttons */}
+                    <div className="flex gap-1">
                       <button
                         onClick={(e) => handleStartRename(e, c)}
                         className="p-2 rounded-full hover:bg-gray-100 text-[#86868b]"

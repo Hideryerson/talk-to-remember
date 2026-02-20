@@ -251,7 +251,7 @@ export default function MainPage() {
 
       const editMsg: ChatMessage = {
         role: "model",
-        text: `✨ Done! I've edited the photo: "${prompt}". How does it look? Want any other changes?`,
+        text: `Done. I edited the photo: "${prompt}". How does it look?`,
       };
       setMessages((prev) => {
         const updated = [...prev, editMsg];
@@ -330,7 +330,7 @@ export default function MainPage() {
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-3 border-b border-gray-800 shrink-0">
         <div>
-          <h1 className="text-lg font-bold">🌙 Daily Recall</h1>
+          <h1 className="text-lg font-bold">RE</h1>
           {profile?.name && (
             <p className="text-xs text-gray-400">Hi, {profile.name}</p>
           )}
@@ -370,7 +370,7 @@ export default function MainPage() {
               onClick={() => fileInputRef.current?.click()}
               className="border-2 border-dashed border-gray-600 rounded-xl h-48 md:h-64 flex flex-col items-center justify-center gap-2 hover:border-blue-500 transition-colors active:bg-gray-900"
             >
-              <span className="text-4xl">📷</span>
+              <span className="text-sm font-medium text-blue-300">Upload</span>
               <span className="text-gray-400 text-sm">Upload a photo from today</span>
             </button>
           ) : (
@@ -383,7 +383,7 @@ export default function MainPage() {
                 />
                 {isEditing && (
                   <div className="absolute inset-0 bg-black/50 rounded-xl flex items-center justify-center">
-                    <span className="animate-pulse text-lg">✨ Editing...</span>
+                    <span className="animate-pulse text-lg">Editing...</span>
                   </div>
                 )}
                 {imageVersions.length > 1 && (
@@ -398,14 +398,14 @@ export default function MainPage() {
                   onClick={() => fileInputRef.current?.click()}
                   className="text-xs bg-gray-800 hover:bg-gray-700 px-3 py-2 rounded-lg"
                 >
-                  📷 Change
+                  Change photo
                 </button>
                 {imageVersions.length > 1 && (
                   <button
                     onClick={() => setShowHistory(true)}
                     className="text-xs bg-gray-800 hover:bg-gray-700 px-3 py-2 rounded-lg"
                   >
-                    📸 History ({imageVersions.length})
+                    History ({imageVersions.length})
                   </button>
                 )}
               </div>
@@ -418,7 +418,7 @@ export default function MainPage() {
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {messages.length === 0 && (
               <div className="text-center text-gray-500 mt-8">
-                <p className="text-3xl mb-2">💬</p>
+                <p className="text-3xl mb-2">—</p>
                 <p className="text-sm">Upload a photo to start your recall session</p>
               </div>
             )}
@@ -450,13 +450,13 @@ export default function MainPage() {
 
           {transcript && (
             <div className="px-3 py-1 text-xs text-gray-400 italic border-t border-gray-800">
-              🎤 &ldquo;{transcript}&rdquo;
+              Mic: &ldquo;{transcript}&rdquo;
             </div>
           )}
 
           {isSpeaking && (
             <div className="px-3 py-1 text-xs text-gray-400 flex items-center gap-2 border-t border-gray-800">
-              <span className="animate-pulse">🔊</span> Speaking...
+              <span className="animate-pulse">●</span> Speaking...
               <button
                 onClick={() => {
                   stopSpeaking();
@@ -472,13 +472,13 @@ export default function MainPage() {
           <div className="border-t border-gray-800 p-3 flex gap-2 shrink-0">
             <button
               onClick={isListening ? stopListening : startListening}
-              className={`min-w-[48px] min-h-[48px] rounded-full text-lg flex items-center justify-center transition-all ${
+              className={`min-w-[48px] min-h-[48px] rounded-full text-xs font-medium flex items-center justify-center transition-all ${
                 isListening
                   ? "bg-red-600 hover:bg-red-500 animate-pulse"
                   : "bg-gray-700 hover:bg-gray-600"
               }`}
             >
-              {isListening ? "⏹" : "🎤"}
+              {isListening ? "Stop" : "Mic"}
             </button>
 
             <input

@@ -44,8 +44,8 @@ export default function Home() {
 
   if (state === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse text-xl">🌙</div>
+      <div className="min-h-screen bg-[#f7f7f8] flex items-center justify-center">
+        <div className="w-10 h-10 border-[3px] border-[#007aff] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }

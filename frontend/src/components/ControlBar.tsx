@@ -26,17 +26,13 @@ const SFSymbols = {
       <line x1="6" y1="6" x2="18" y2="18" />
     </svg>
   ),
-  // photo.stack - Gallery
+  // photo.on.rectangle.angled - Gallery
   photoStack: (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      {/* Front photo */}
-      <rect x="3" y="7" width="14" height="10" rx="2" />
-      {/* Back photo */}
-      <path d="M7 4h10a2 2 0 012 2v10" />
-      {/* Sun indicator */}
-      <circle cx="8" cy="11" r="1.5" fill="currentColor" stroke="none" />
-      {/* Mountain landscape */}
-      <path d="M3 14l3-3 2 2 4-4 5 5" />
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="6" y="4" width="13" height="10" rx="2" />
+      <rect x="4" y="8" width="13" height="10" rx="2" />
+      <circle cx="9.5" cy="11.5" r="1.1" fill="currentColor" stroke="none" />
+      <path d="M4 15.5l3-3 2 2 3-3 5 5" />
     </svg>
   ),
   // waveform - Listening indicator

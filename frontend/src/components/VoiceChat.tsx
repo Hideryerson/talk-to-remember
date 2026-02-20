@@ -496,7 +496,7 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
       imageVersionsRef.current = newVersions;
 
       const vNum = newVersions.length - 1;
-      const editMsgText = `✨ Created version V${vNum}: "${prompt}". How does it look? Want any other changes?`;
+      const editMsgText = `Created version V${vNum}: "${prompt}". How does it look?`;
 
       const editMsg: ChatMessage = { role: "model", text: editMsgText };
       const updated = [...messagesRef.current, editMsg];
@@ -591,8 +591,8 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
   // Loading state
   if (!hydrated) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-pulse text-xl">🌙</div>
+      <div className="min-h-screen bg-[#f7f7f8] flex items-center justify-center">
+        <div className="w-10 h-10 border-[3px] border-[#007aff] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -601,7 +601,6 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
   const AudioPromptOverlay = () => (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-6">
       <div className="bg-gray-900 rounded-2xl p-6 max-w-sm text-center">
-        <div className="text-4xl mb-4">🔊</div>
         <h2 className="text-lg font-semibold mb-2">Enable Sound</h2>
         <p className="text-gray-400 text-sm mb-4">
           Tap below to enable voice responses from your recall companion.
@@ -644,11 +643,11 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
   const getMicButtonIcon = () => {
     switch (voiceStatus) {
       case "recording":
-        return "⏹";
+        return "Stop";
       case "transcribing":
-        return "⏳";
+        return "...";
       default:
-        return "🎤";
+        return "Mic";
     }
   };
 
@@ -658,14 +657,14 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
       <div className="flex flex-col h-[100dvh]">
         <header className="flex items-center justify-between px-4 py-3 border-b border-gray-800 shrink-0">
           <button onClick={onBack} className="text-sm text-gray-400 hover:text-white">
-            ← Back
+            Back
           </button>
-          <h1 className="text-lg font-bold">🌙 New Session</h1>
+          <h1 className="text-lg font-bold">New Session</h1>
           <button
             onClick={() => setShowDebug(!showDebug)}
             className="text-xs text-gray-600 hover:text-gray-400"
           >
-            🐛
+            Debug
           </button>
         </header>
 
@@ -681,7 +680,7 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
             onClick={() => fileInputRef.current?.click()}
             className="border-2 border-dashed border-gray-600 rounded-2xl w-full max-w-sm h-64 flex flex-col items-center justify-center gap-3 hover:border-blue-500 active:bg-gray-900 transition-colors"
           >
-            <span className="text-5xl">📷</span>
+            <span className="text-sm font-medium text-blue-300">Upload</span>
             <span className="text-gray-400">Upload a photo from today</span>
             <span className="text-gray-600 text-xs">Supports JPEG, PNG, HEIC</span>
           </button>
@@ -689,7 +688,7 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
 
         {showDebug && (
           <div className="px-3 py-2 bg-black/80 text-[10px] font-mono text-gray-400 border-t border-gray-800">
-            {getRecorderDebugInfo()} | Audio: {audioUnlocked ? "✓" : "✗"}
+            {getRecorderDebugInfo()} | Audio: {audioUnlocked ? "on" : "off"}
           </div>
         )}
       </div>
@@ -704,7 +703,7 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-2 border-b border-gray-800 shrink-0">
         <button onClick={onBack} className="text-sm text-gray-400 hover:text-white">
-          ← Back
+          Back
         </button>
         <div className="flex items-center gap-2">
           {profile?.name && (
@@ -714,7 +713,7 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
             onClick={() => setShowDebug(!showDebug)}
             className="text-xs text-gray-600 hover:text-gray-400"
           >
-            🐛
+            Debug
           </button>
         </div>
         <button
@@ -737,7 +736,7 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
         />
         {isEditing && (
           <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-            <span className="animate-pulse text-lg">✨ Editing...</span>
+            <span className="animate-pulse text-lg">Editing...</span>
           </div>
         )}
         {imageVersions.length > 1 && (
@@ -746,7 +745,7 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
               onClick={() => setShowHistory(true)}
               className="bg-black/60 backdrop-blur text-xs px-2.5 py-1 rounded-full flex items-center gap-1"
             >
-              📸 V{imageVersions.length - 1}
+              V{imageVersions.length - 1}
               <span className="text-gray-400">· History</span>
             </button>
           </div>
@@ -776,7 +775,7 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
               {msg.text.replace(/\[EDIT_SUGGESTION:.*?\]/g, "").trim()}
               {/* Speaking indicator on current message */}
               {msg.role === "model" && speakingMessage === msg.text && (
-                <span className="ml-1 inline-block animate-pulse">🔊</span>
+                <span className="ml-1 inline-block animate-pulse">●</span>
               )}
             </div>
           </div>
@@ -799,7 +798,7 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
           <div className="flex justify-start">
             <div className="bg-purple-900/50 border border-purple-700 px-3 py-2 rounded-2xl text-sm">
               <div className="text-purple-300 mb-2">
-                ✨ Edit suggestion: &ldquo;{pendingEdit}&rdquo;
+                Edit suggestion: &ldquo;{pendingEdit}&rdquo;
               </div>
               <div className="flex gap-2">
                 <button
@@ -828,12 +827,12 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
       {/* Voice Error */}
       {voiceError && (
         <div className="px-3 py-2 bg-red-900/50 border-t border-red-800 text-xs text-red-300">
-          ⚠️ {voiceError}
+          Error: {voiceError}
           <button
             onClick={() => setVoiceError(null)}
             className="ml-2 text-red-400 hover:text-red-300"
           >
-            ✕
+            Close
           </button>
         </div>
       )}
@@ -842,20 +841,20 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
       {(transcript || voiceStatus !== "idle" || speakingStatus) && (
         <div className="px-3 py-1.5 border-t border-gray-800 text-xs">
           {transcript && voiceStatus !== "recording" && (
-            <div className="text-gray-400 italic mb-1">🎤 &ldquo;{transcript}&rdquo;</div>
+            <div className="text-gray-400 italic mb-1">Mic: &ldquo;{transcript}&rdquo;</div>
           )}
           {voiceStatus === "recording" && (
             <div className="text-red-400 animate-pulse">● Recording... Tap to stop</div>
           )}
           {voiceStatus === "transcribing" && (
-            <div className="text-yellow-400">⏳ Transcribing...</div>
+            <div className="text-yellow-400">Transcribing...</div>
           )}
           {voiceStatus === "processing" && (
-            <div className="text-yellow-400">⏳ Processing...</div>
+            <div className="text-yellow-400">Processing...</div>
           )}
           {voiceStatus === "speaking" && (
             <div className="text-green-400 flex items-center gap-2">
-              🔊 {speakingStatus || "Speaking..."}
+              Voice: {speakingStatus || "Speaking..."}
               <button onClick={handleStopSpeaking} className="text-red-400 hover:text-red-300">
                 Stop
               </button>
@@ -867,7 +866,7 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
       {/* Debug panel */}
       {showDebug && (
         <div className="px-3 py-1 bg-black/80 text-[10px] font-mono text-gray-400 border-t border-gray-800">
-          {getRecorderDebugInfo()} | Audio: {audioUnlocked ? "✓" : "✗"} | Status: {voiceStatus}
+          {getRecorderDebugInfo()} | Audio: {audioUnlocked ? "on" : "off"} | Status: {voiceStatus}
         </div>
       )}
 
@@ -876,7 +875,7 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
         <button
           onClick={handleMicPress}
           disabled={isLoading || voiceStatus === "transcribing"}
-          className={`w-14 h-14 min-w-[56px] min-h-[56px] rounded-full text-xl flex items-center justify-center transition-all shrink-0 ${getMicButtonStyle()} disabled:opacity-50`}
+          className={`w-14 h-14 min-w-[56px] min-h-[56px] rounded-full text-xs font-medium flex items-center justify-center transition-all shrink-0 ${getMicButtonStyle()} disabled:opacity-50`}
         >
           {getMicButtonIcon()}
         </button>

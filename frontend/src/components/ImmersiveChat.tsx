@@ -43,17 +43,13 @@ const SFSymbols = {
       <path d="M9 2L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2H9zm3 15c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" />
     </svg>
   ),
-  // iphone.rotate.landscape - Rotate phone hint
+  // iphone landscape hint
   rotatePhone: (
-    <svg width="64" height="64" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      {/* Phone frame */}
-      <rect x="20" y="10" width="24" height="44" rx="4" />
-      {/* Home button indicator */}
-      <circle cx="32" cy="48" r="2" fill="currentColor" />
-      {/* Rotation arrow arc */}
-      <path d="M10 32 A22 22 0 0 1 32 10" strokeDasharray="6 4" />
-      {/* Arrow head */}
-      <path d="M10 32 L14 27 M10 32 L5 27" />
+    <svg width="72" height="72" viewBox="0 0 72 72" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="13" y="16" width="23" height="40" rx="5" opacity="0.35" />
+      <rect x="36" y="25" width="23" height="23" rx="5" />
+      <path className="rotate-hint-arrow" d="M22 10c8-6 20-6 28 2" />
+      <path className="rotate-hint-arrow" d="M50 12l-1.5-5 5 1.5" />
     </svg>
   ),
   // arrow.clockwise - Continue
@@ -70,6 +66,12 @@ const SFSymbols = {
       <circle cx="8" cy="10" r="1" fill="currentColor" />
       <circle cx="12" cy="10" r="1" fill="currentColor" />
       <circle cx="16" cy="10" r="1" fill="currentColor" />
+    </svg>
+  ),
+  // xmark
+  xmark: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+      <path d="M6 6l12 12M18 6L6 18" />
     </svg>
   ),
 };
@@ -821,10 +823,10 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
             <span>{liveError}</span>
             <button
               onClick={() => setLiveError(null)}
-              className="text-red-500 hover:text-red-700 text-base leading-none"
+              className="w-7 h-7 rounded-full bg-red-100 border border-red-200 flex items-center justify-center text-red-500 hover:text-red-700"
               aria-label="Dismiss error"
             >
-              ×
+              {SFSymbols.xmark}
             </button>
           </div>
         </div>

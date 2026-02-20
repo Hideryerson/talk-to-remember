@@ -1,7 +1,7 @@
 {
-  "name": "Daily Recall",
-  "short_name": "Recall",
-  "description": "Voice-guided photo recall companion",
+  "name": "RE",
+  "short_name": "RE",
+  "description": "Recall the moment. Relive the story.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "any",

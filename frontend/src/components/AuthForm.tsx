@@ -86,8 +86,8 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
     <div className="min-h-screen bg-[#f7f7f8] flex items-center justify-center p-4">
       <div className="w-full max-w-sm bg-white rounded-3xl border border-gray-200 shadow-sm p-6">
         <div className="text-center mb-6">
-          <h1 className="text-2xl font-semibold text-[#1d1d1f]">Daily Recall</h1>
-          <p className="text-sm text-[#86868b] mt-1">Voice-guided photo memory companion</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-[#1d1d1f]">RE</h1>
+          <p className="text-sm text-[#86868b] mt-1">Recall the moment. Relive the story.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
