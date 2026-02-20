@@ -11,12 +11,14 @@ interface FloatingTranscriptProps {
   messages: Message[];
   visible: boolean;
   currentlySpeaking?: string | null;
+  isPreparing?: boolean;
 }
 
 export default function FloatingTranscript({
   messages,
   visible,
   currentlySpeaking,
+  isPreparing = false,
 }: FloatingTranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -26,7 +28,28 @@ export default function FloatingTranscript({
     }
   }, [messages, visible]);
 
-  if (!visible || messages.length === 0) return null;
+  if (!visible) return null;
+
+  if (messages.length === 0) {
+    return (
+      <div className="fixed bottom-32 left-4 right-4 z-30 safe-bottom transcript-section">
+        <div className="transcript-bubble px-4 py-3">
+          {isPreparing ? (
+            <div className="flex items-center gap-2.5 text-[#1d1d1f]">
+              <div className="preparing-dots" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+              <span className="text-sm font-medium">Preparing transcript</span>
+            </div>
+          ) : (
+            <p className="text-sm text-[#86868b]">Transcript will appear here</p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // Only show last 3 messages for minimal UI
   const recentMessages = messages.slice(-3);
@@ -35,7 +58,7 @@ export default function FloatingTranscript({
     <div className="fixed bottom-32 left-4 right-4 z-30 safe-bottom transcript-section">
       <div
         ref={scrollRef}
-        className="p-2 max-h-[40vh] overflow-y-auto no-scrollbar ios-transition"
+        className="transcript-bubble p-2 max-h-[40vh] overflow-y-auto no-scrollbar ios-transition"
       >
         <div className="space-y-3">
           {recentMessages.map((msg, i) => (

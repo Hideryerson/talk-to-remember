@@ -91,11 +91,11 @@ export default function VersionGallery({
         />
 
         {/* Top bar - white semi-transparent */}
-        <div className="absolute top-0 left-0 right-0 safe-top">
+        <div className="absolute top-0 left-0 right-0 safe-top z-30">
           <div className="flex items-center justify-between px-4 py-4">
             <button
               onClick={handleFullscreenClose}
-              className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center text-white active:scale-95 transition-transform"
+              className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center text-white active:scale-95 transition-transform touch-manipulation"
               aria-label="Back to gallery"
               type="button"
             >
@@ -106,7 +106,7 @@ export default function VersionGallery({
             </span>
             <button
               onClick={handleCloseGallery}
-              className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center text-white active:scale-95 transition-transform"
+              className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center text-white active:scale-95 transition-transform touch-manipulation"
               aria-label="Close gallery"
               type="button"
             >
@@ -116,7 +116,7 @@ export default function VersionGallery({
         </div>
 
         {/* Bottom bar - white semi-transparent */}
-        <div className="absolute bottom-0 left-0 right-0 safe-bottom">
+        <div className="absolute bottom-0 left-0 right-0 safe-bottom z-20">
           <div className="bg-white/90 backdrop-blur-md mx-4 mb-4 p-4 rounded-2xl border border-white/50">
             {versions[fullscreenIndex]?.editPrompt && (
               <p className="text-[#1d1d1f]/80 text-sm text-center mb-3">
@@ -138,12 +138,12 @@ export default function VersionGallery({
   return (
     <div className="fixed inset-0 z-50 bg-white/95 backdrop-blur-md">
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 safe-top">
+      <div className="absolute top-0 left-0 right-0 safe-top z-30">
         <div className="flex items-center justify-between px-4 py-4">
           <h2 className="text-lg font-semibold text-[#1d1d1f]">Photo Versions</h2>
           <button
             onClick={handleCloseGallery}
-            className="w-10 h-10 rounded-full border border-[#86868b] flex items-center justify-center text-[#1d1d1f] active:scale-95 transition-transform"
+            className="w-10 h-10 rounded-full border border-[#86868b] flex items-center justify-center text-[#1d1d1f] active:scale-95 transition-transform touch-manipulation"
             aria-label="Back to conversation"
             type="button"
           >
@@ -153,7 +153,7 @@ export default function VersionGallery({
       </div>
 
       {/* Main preview */}
-      <div className="absolute inset-0 flex items-center justify-center pt-20 pb-48">
+      <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center pt-20 pb-48">
         <div className="relative w-full h-full max-w-lg mx-4">
           <img
             src={versions[selectedIndex]?.dataUrl}
@@ -171,7 +171,7 @@ export default function VersionGallery({
       </div>
 
       {/* Thumbnail strip */}
-      <div className="absolute bottom-0 left-0 right-0 safe-bottom">
+      <div className="absolute bottom-0 left-0 right-0 safe-bottom z-20">
         <div className="bg-white/90 backdrop-blur-md px-4 py-4 mx-4 mb-4 rounded-2xl border border-black/5 shadow-lg">
           <p className="text-xs text-[#86868b] mb-3 text-center">
             Double-tap to change the photo in conversation

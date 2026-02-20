@@ -229,11 +229,6 @@ export default function ConversationList({ onSelect, onNew }: Props) {
     setEditingId(c.id);
   };
 
-  const handleStartDelete = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    setDeleteConfirmId(id);
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen bg-[#f7f7f8] flex items-center justify-center">
@@ -342,23 +337,14 @@ export default function ConversationList({ onSelect, onNew }: Props) {
 
                   {/* Arrow and actions */}
                   <div className="flex items-center gap-1">
-                    {/* Rename/Delete buttons */}
-                    <div className="flex gap-1">
-                      <button
-                        onClick={(e) => handleStartRename(e, c)}
-                        className="p-2 rounded-full hover:bg-gray-100 text-[#86868b]"
-                        title="Rename"
-                      >
-                        {SFSymbols.pencil}
-                      </button>
-                      <button
-                        onClick={(e) => handleStartDelete(e, c.id)}
-                        className="p-2 rounded-full hover:bg-red-50 text-[#86868b] hover:text-red-500"
-                        title="Delete"
-                      >
-                        {SFSymbols.trash}
-                      </button>
-                    </div>
+                    {/* Rename button */}
+                    <button
+                      onClick={(e) => handleStartRename(e, c)}
+                      className="p-2 rounded-full hover:bg-gray-100 text-[#86868b]"
+                      title="Rename"
+                    >
+                      {SFSymbols.pencil}
+                    </button>
                     <span className="text-[#c7c7cc]">
                       {SFSymbols.chevronRight}
                     </span>

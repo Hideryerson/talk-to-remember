@@ -89,7 +89,7 @@ export default function ImmersiveChat({
   const [imageVersions, setImageVersions] = useState<ImageVersion[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessionState, setSessionState] = useState<SessionState>("idle");
-  const [showTranscript, setShowTranscript] = useState(true);
+  const [showTranscript, setShowTranscript] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [currentlySpeaking, setCurrentlySpeaking] = useState<string | null>(null);
@@ -101,6 +101,8 @@ export default function ImmersiveChat({
   const [isNewUpload, setIsNewUpload] = useState(false);
   const [hasStartedSession, setHasStartedSession] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
+  const [awaitingFirstAssistantTurn, setAwaitingFirstAssistantTurn] = useState(false);
+  const [listeningLevel, setListeningLevel] = useState(0);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -112,6 +114,8 @@ export default function ImmersiveChat({
   const currentImageIndexRef = useRef(0);
   const isEditingRef = useRef(false);
   const imageMimeTypeRef = useRef(imageMimeType);
+  const awaitingFirstAssistantTurnRef = useRef(false);
+  const assistantAudioInCurrentTurnRef = useRef(false);
 
   // Keep refs in sync
   useEffect(() => {
@@ -121,7 +125,20 @@ export default function ImmersiveChat({
     currentImageIndexRef.current = currentImageIndex;
     isEditingRef.current = isEditing;
     imageMimeTypeRef.current = imageMimeType;
-  }, [messages, imageVersions, convoId, currentImageIndex, isEditing, imageMimeType]);
+    awaitingFirstAssistantTurnRef.current = awaitingFirstAssistantTurn;
+  }, [messages, imageVersions, convoId, currentImageIndex, isEditing, imageMimeType, awaitingFirstAssistantTurn]);
+
+  // Decay mic level so listening waveform reflects real input and settles smoothly.
+  useEffect(() => {
+    if (sessionState !== "listening") {
+      setListeningLevel(0);
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setListeningLevel((prev) => (prev < 0.02 ? 0 : prev * 0.72));
+    }, 90);
+    return () => window.clearInterval(timer);
+  }, [sessionState]);
 
   // Detect orientation changes
   useEffect(() => {
@@ -217,6 +234,8 @@ export default function ImmersiveChat({
           ? `Failed to get Live token: ${liveTokenError}`
           : "Missing Gemini Live credential. Configure /api/live-token or NEXT_PUBLIC_WS_URL."
       );
+      setAwaitingFirstAssistantTurn(false);
+      awaitingFirstAssistantTurnRef.current = false;
       return;
     }
 
@@ -237,6 +256,9 @@ export default function ImmersiveChat({
     const systemInstruction = `${DEFAULT_SYSTEM_INSTRUCTION}
 
 ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${welcomeInstruction}`;
+    const firstTurnPrompt = isContinuation
+      ? "Welcome the user back in one short sentence, briefly recap what you discussed, and ask one follow-up question to continue."
+      : "Start by saying: 'Hi, thank you for sharing the photo with me.' Then mention one detail you notice and ask one short, gentle question.";
 
     const createSession = (credential: string, useProxy: boolean) => {
       const createdSession = new LiveSession(credential, {
@@ -252,19 +274,23 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     setSessionState("connecting");
     setShowWelcomeBack(false);
     setLiveError(null);
+    setListeningLevel(0);
+    setAwaitingFirstAssistantTurn(true);
+    awaitingFirstAssistantTurnRef.current = true;
+    assistantAudioInCurrentTurnRef.current = false;
 
     const sessionCallbacks: LiveSessionCallbacks = {
       onConnected: () => {
         log("Live session connected");
         setLiveError(null);
-        setSessionState("listening");
+        setSessionState("connecting");
 
         const activeSession = liveSessionRef.current;
         if (!activeSession) return;
 
         // Send the image
         const base64 = imageDataUrl.split(",")[1];
-        activeSession.sendImage(base64, mimeType);
+        activeSession.sendImage(base64, mimeType, firstTurnPrompt);
 
         // Start audio input
         activeSession.startAudioInput().then((started) => {
@@ -272,11 +298,18 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
             log("Audio input failed to start");
             setLiveError("Microphone failed to start. Check browser microphone permission.");
             setSessionState("idle");
+            setAwaitingFirstAssistantTurn(false);
+            awaitingFirstAssistantTurnRef.current = false;
           }
         });
       },
       onDisconnected: () => {
         log("Live session disconnected");
+        setListeningLevel(0);
+        setCurrentlySpeaking(null);
+        setAwaitingFirstAssistantTurn(false);
+        awaitingFirstAssistantTurnRef.current = false;
+        assistantAudioInCurrentTurnRef.current = false;
         setSessionState("idle");
       },
       onTextReceived: (text, isFinal) => {
@@ -292,7 +325,12 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         }
       },
       onAudioReceived: () => {
+        assistantAudioInCurrentTurnRef.current = true;
+        setListeningLevel(0);
         setSessionState("speaking");
+      },
+      onInputAudioLevel: (level) => {
+        setListeningLevel((prev) => Math.max(level, prev * 0.55));
       },
       onToolCall: async (toolCall) => {
         log("Tool call received:", toolCall);
@@ -332,19 +370,41 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       onError: (error) => {
         log("Live session error:", error);
         setLiveError(error);
+        setListeningLevel(0);
+        setCurrentlySpeaking(null);
+        setAwaitingFirstAssistantTurn(false);
+        awaitingFirstAssistantTurnRef.current = false;
+        assistantAudioInCurrentTurnRef.current = false;
         setSessionState("idle");
       },
       onInterrupted: () => {
         log("Response interrupted");
         setCurrentlySpeaking(null);
+        setAwaitingFirstAssistantTurn(false);
+        awaitingFirstAssistantTurnRef.current = false;
+        assistantAudioInCurrentTurnRef.current = false;
         setSessionState("listening");
       },
       onPlaybackComplete: () => {
         setCurrentlySpeaking(null);
+        assistantAudioInCurrentTurnRef.current = false;
+        if (awaitingFirstAssistantTurnRef.current) {
+          setAwaitingFirstAssistantTurn(false);
+          awaitingFirstAssistantTurnRef.current = false;
+        }
         setSessionState((prev) => (prev === "editing" ? prev : "listening"));
       },
       onTurnComplete: () => {
-        setSessionState((prev) => (prev === "speaking" || prev === "editing" ? prev : "listening"));
+        if (awaitingFirstAssistantTurnRef.current && !assistantAudioInCurrentTurnRef.current) {
+          setAwaitingFirstAssistantTurn(false);
+          awaitingFirstAssistantTurnRef.current = false;
+          setSessionState((prev) => (prev === "editing" ? prev : "listening"));
+          return;
+        }
+        if (!awaitingFirstAssistantTurnRef.current) {
+          setSessionState((prev) => (prev === "editing" ? prev : "listening"));
+        }
+        assistantAudioInCurrentTurnRef.current = false;
       },
     };
 
@@ -382,6 +442,10 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       } else {
         setLiveError("Failed to connect to Gemini Live. Please retry.");
       }
+      setListeningLevel(0);
+      setAwaitingFirstAssistantTurn(false);
+      awaitingFirstAssistantTurnRef.current = false;
+      assistantAudioInCurrentTurnRef.current = false;
       setSessionState("idle");
     }
   }, [profile]);
@@ -725,6 +789,12 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     imageVersions.length > 0
       ? imageVersions[currentImageIndex]?.dataUrl
       : image;
+  const transcriptPreparing =
+    messages.length === 0 &&
+    (sessionState === "connecting" ||
+      sessionState === "speaking" ||
+      sessionState === "listening" ||
+      awaitingFirstAssistantTurn);
 
   // Loading state - with SF Symbol style icon
   if (!hydrated) {
@@ -896,6 +966,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         messages={messages}
         visible={showTranscript}
         currentlySpeaking={currentlySpeaking}
+        isPreparing={transcriptPreparing}
       />
 
       {/* Control bar */}
@@ -906,6 +977,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         onOpenGallery={() => setShowGallery(true)}
         isListening={sessionState === "listening"}
         isSpeaking={sessionState === "speaking"}
+        listeningLevel={listeningLevel}
       />
 
       {/* Version gallery modal */}

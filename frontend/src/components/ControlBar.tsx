@@ -7,6 +7,7 @@ interface ControlBarProps {
   onOpenGallery: () => void;
   isListening: boolean;
   isSpeaking: boolean;
+  listeningLevel: number;
 }
 
 // SF Symbols style icons as SVG
@@ -29,10 +30,10 @@ const SFSymbols = {
   // photo.on.rectangle.angled - Gallery
   photoStack: (
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="6" y="4" width="13" height="10" rx="2" />
-      <rect x="4" y="8" width="13" height="10" rx="2" />
-      <circle cx="9.5" cy="11.5" r="1.1" fill="currentColor" stroke="none" />
-      <path d="M4 15.5l3-3 2 2 3-3 5 5" />
+      <rect x="4.5" y="7.5" width="12" height="9" rx="1.8" />
+      <rect x="7.5" y="4.5" width="12" height="9" rx="1.8" />
+      <circle cx="12" cy="8.8" r="0.95" fill="currentColor" stroke="none" />
+      <path d="M8.2 13l2.2-2.2 1.7 1.7 2.4-2.6 2.8 3.1" />
     </svg>
   ),
   // waveform - Listening indicator
@@ -62,7 +63,11 @@ export default function ControlBar({
   onOpenGallery,
   isListening,
   isSpeaking,
+  listeningLevel,
 }: ControlBarProps) {
+  const safeLevel = Math.max(0, Math.min(1, listeningLevel));
+  const barMultipliers = [0.55, 0.78, 1, 0.78, 0.55];
+
   return (
     <div className="fixed bottom-8 left-1/2 -translate-x-1/2 safe-bottom z-40">
       <div className="control-bar px-4 py-3 flex items-center gap-4">
@@ -101,11 +106,16 @@ export default function ControlBar({
             {isListening && (
               <>
                 <div className="listening-indicator">
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                  <span></span>
+                  {barMultipliers.map((multiplier, index) => {
+                    const minHeight = 5 + index % 2;
+                    const dynamicHeight = Math.round((6 + safeLevel * 14) * multiplier);
+                    return (
+                      <span
+                        key={`mic-level-${index}`}
+                        style={{ height: `${Math.max(minHeight, dynamicHeight)}px` }}
+                      />
+                    );
+                  })}
                 </div>
                 <span className="text-[var(--accent)] font-medium">Listening</span>
               </>

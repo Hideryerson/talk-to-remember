@@ -35,6 +35,7 @@ export interface LiveSessionCallbacks {
   onConnected?: () => void;
   onDisconnected?: () => void;
   onAudioReceived?: (audioData: ArrayBuffer) => void;
+  onInputAudioLevel?: (level: number) => void;
   onTextReceived?: (text: string, isFinal: boolean) => void;
   onToolCall?: (toolCall: ToolCall) => void;
   onError?: (error: string) => void;
@@ -524,6 +525,14 @@ export class LiveSession {
   private sendAudioChunk(float32Data: Float32Array): void {
     if (this.state !== "connected") return;
 
+    let powerSum = 0;
+    for (let i = 0; i < float32Data.length; i++) {
+      powerSum += float32Data[i] * float32Data[i];
+    }
+    const rms = Math.sqrt(powerSum / Math.max(float32Data.length, 1));
+    const normalizedLevel = Math.min(1, rms * 6);
+    this.callbacks.onInputAudioLevel?.(normalizedLevel);
+
     // Convert Float32 to Int16 (PCM16)
     const int16Data = new Int16Array(float32Data.length);
     for (let i = 0; i < float32Data.length; i++) {
@@ -602,7 +611,7 @@ export class LiveSession {
   /**
    * Send image for context
    */
-  sendImage(base64Data: string, mimeType: string): void {
+  sendImage(base64Data: string, mimeType: string, promptText: string = "I just uploaded this photo. What do you see?"): void {
     if (this.state !== "connected") return;
 
     this.send({
@@ -618,7 +627,7 @@ export class LiveSession {
                 },
               },
               {
-                text: "I just uploaded this photo. What do you see?",
+                text: promptText,
               },
             ],
           },
