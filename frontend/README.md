@@ -14,3 +14,9 @@
 
 - `NEXT_PUBLIC_BACKEND_URL=https://<your-render-domain>`
 - `NEXT_PUBLIC_WS_URL=wss://<your-render-domain>/ws/live`
+
+## Common auth issue: "Load failed"
+
+If login/register shows `Load failed`, usually one of these is wrong:
+- `NEXT_PUBLIC_BACKEND_URL` is missing or still `http://` while frontend is `https://`
+- backend CORS does not include your Vercel domain
