@@ -77,6 +77,7 @@ export class LiveSession {
   private connectResolve: ((connected: boolean) => void) | null = null;
   private setupTimeout: ReturnType<typeof setTimeout> | null = null;
   private setupCompleted = false;
+  private intentionalClose = false;
 
   constructor(apiKey: string, config: LiveConfig = {}) {
     this.apiKey = apiKey;
@@ -105,6 +106,7 @@ export class LiveSession {
     this.callbacks = callbacks;
     this.state = "connecting";
     this.setupCompleted = false;
+    this.intentionalClose = false;
 
     try {
       // Initialize AudioContext
@@ -166,11 +168,14 @@ export class LiveSession {
         };
 
         this.ws.onclose = (event) => {
+          const wasSetupCompleted = this.setupCompleted;
+          const wasIntentionalClose = this.intentionalClose;
+          this.intentionalClose = false;
           log("WebSocket closed:", event.code, event.reason || "(no reason)");
           this.state = "disconnected";
           this.cleanup();
 
-          if (!this.setupCompleted) {
+          if (!wasIntentionalClose && !wasSetupCompleted) {
             const reason = event.reason?.trim();
             const baseError = reason
               ? `Live connection closed before setup completed (code ${event.code}: ${reason}).`
@@ -309,18 +314,13 @@ export class LiveSession {
         return;
       }
 
-      // Handle server content (audio/text)
+      // Handle server content (audio + speech transcription)
       if (message.serverContent) {
         const content = message.serverContent;
 
         // Model turn with parts
         if (content.modelTurn?.parts) {
           for (const part of content.modelTurn.parts) {
-            // Text response
-            if (part.text) {
-              this.callbacks.onTextReceived?.(part.text, !!content.turnComplete);
-            }
-
             // Audio response (inline data)
             if (part.inlineData?.data) {
               const audioBytes = this.base64ToArrayBuffer(part.inlineData.data);
@@ -685,6 +685,7 @@ export class LiveSession {
    * Disconnect from the API
    */
   disconnect(): void {
+    this.intentionalClose = true;
     if (this.setupTimeout) {
       clearTimeout(this.setupTimeout);
       this.setupTimeout = null;
@@ -695,7 +696,7 @@ export class LiveSession {
     this.stopAudioInput();
     this.stopPlayback();
     if (this.ws) {
-      this.ws.close();
+      this.ws.close(1000, "Client closing session");
       this.ws = null;
     }
     this.state = "disconnected";
