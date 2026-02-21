@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
-import { getToken } from "@/lib/auth";
+import { useState, useEffect, useMemo } from "react";
+import { setToken, getToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 import { loadVoices, speakText } from "@/lib/voices";
 
 interface OnboardingProps {
   onComplete: () => void;
   onBackToAuth: () => void;
+  pendingCredentials?: { username: string; password: string } | null;
 }
 
 type StepField = "name" | "selfIntro" | "hobbies" | "photoTypes";
@@ -66,7 +66,7 @@ function toFriendlySaveError(message: string) {
   return message;
 }
 
-export default function Onboarding({ onComplete, onBackToAuth }: OnboardingProps) {
+export default function Onboarding({ onComplete, onBackToAuth, pendingCredentials }: OnboardingProps) {
   const [stepIndex, setStepIndex] = useState(0);
   const [values, setValues] = useState<FormValues>({
     name: "",
@@ -129,19 +129,46 @@ export default function Onboarding({ onComplete, onBackToAuth }: OnboardingProps
     };
 
     try {
-      const res = await fetch(apiUrl("/api/profile"), {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(profile),
-        signal: controller.signal,
-      });
+      if (pendingCredentials) {
+        // Deferred Single-Step Registration Fusion
+        const res = await fetch(apiUrl("/api/auth"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "register",
+            username: pendingCredentials.username,
+            password: pendingCredentials.password,
+            profile,
+          }),
+          signal: controller.signal,
+        });
 
-      const payload = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(payload?.error || `Save failed (${res.status})`);
+        const payload = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error(payload?.error || `Registration failed (${res.status})`);
+        }
+
+        if (payload?.token) {
+          setToken(payload.token);
+        } else {
+          throw new Error("Invalid registration response");
+        }
+      } else {
+        // Standard profile update for existing users
+        const res = await fetch(apiUrl("/api/profile"), {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(profile),
+          signal: controller.signal,
+        });
+
+        const payload = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error(payload?.error || `Save failed (${res.status})`);
+        }
       }
 
       speakText("Great. Your profile is ready.");
@@ -179,7 +206,7 @@ export default function Onboarding({ onComplete, onBackToAuth }: OnboardingProps
   return (
     <div className="h-[100dvh] bg-[#f7f7f8] flex flex-col overflow-hidden">
       {/* Sticky Header */}
-      <div className="w-full px-4 pt-12 pb-4 bg-white/90 backdrop-blur-md border-b border-gray-200 z-10 shrink-0 sticky top-0">
+      <div className="w-full px-4 pt-[max(env(safe-area-inset-top,1.5rem),1.5rem)] pb-4 bg-white/90 backdrop-blur-md border-b border-gray-200 z-10 shrink-0 sticky top-0">
         <div className="max-w-md mx-auto">
           <h1 className="text-xl font-semibold tracking-tight text-[#1d1d1f] text-center">Getting to know you</h1>
           <p className="text-sm text-[#86868b] mt-2 text-center">
@@ -242,7 +269,7 @@ export default function Onboarding({ onComplete, onBackToAuth }: OnboardingProps
       </div>
 
       {/* Sticky Footer */}
-      <div className="w-full px-6 py-4 bg-white/90 backdrop-blur-md border-t border-gray-200 z-10 shrink-0 sticky bottom-0 safe-bottom">
+      <div className="w-full px-6 pt-4 pb-[max(env(safe-area-inset-bottom,1rem),1rem)] bg-white/90 backdrop-blur-md border-t border-gray-200 z-10 shrink-0 sticky bottom-0 safe-bottom">
         <div className="max-w-md mx-auto flex gap-3">
           <button
             type="button"

@@ -15,6 +15,7 @@ export default function Home() {
   const [state, setState] = useState<AppState>("loading");
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [currentConvoId, setCurrentConvoId] = useState<string | null>(null);
+  const [pendingCredentials, setPendingCredentials] = useState<{ username: string, password: string } | null>(null);
 
   useEffect(() => {
     checkState();
@@ -51,16 +52,27 @@ export default function Home() {
   }
 
   if (state === "auth") {
-    return <AuthForm onSuccess={checkState} />;
+    return (
+      <AuthForm
+        onSuccess={checkState}
+        onStartRegistration={(creds) => {
+          setPendingCredentials(creds);
+          setState("onboarding");
+        }}
+      />
+    );
   }
 
   if (state === "onboarding") {
     return (
       <Onboarding
+        pendingCredentials={pendingCredentials}
         onComplete={() => {
+          setPendingCredentials(null);
           checkState(); // re-fetch profile then go to conversations
         }}
         onBackToAuth={() => {
+          setPendingCredentials(null);
           setToken("");
           setState("auth");
         }}

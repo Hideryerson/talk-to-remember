@@ -211,8 +211,33 @@ app.get("/health", (_req, res) => {
   });
 });
 
+app.post("/api/check-username", async (req, res) => {
+  const { username } = req.body || {};
+  const normalizedUsername = toSafeString(username).trim();
+
+  if (!normalizedUsername) {
+    res.status(400).json({ error: "Username required" });
+    return;
+  }
+
+  try {
+    const { data: existingUser, error } = await supabase
+      .from("users")
+      .select("id")
+      .eq("username", normalizedUsername)
+      .maybeSingle();
+
+    if (error && !isNoRowsError(error)) throw error;
+
+    res.json({ available: !existingUser });
+  } catch (error) {
+    console.error("Check username error:", error);
+    res.status(500).json({ error: "Validation failed" });
+  }
+});
+
 app.post("/api/auth", async (req, res) => {
-  const { action, username, password } = req.body || {};
+  const { action, username, password, profile } = req.body || {};
   const normalizedUsername = toSafeString(username).trim();
   const passwordText = toSafeString(password);
 
@@ -257,11 +282,26 @@ app.post("/api/auth", async (req, res) => {
         throw insertUserError;
       }
 
-      const { error: insertProfileError } = await supabase.from("profiles").insert([
-        {
-          user_id: newUser.id,
-        },
-      ]);
+      const profilePayload = {
+        user_id: newUser.id,
+      };
+
+      if (profile && typeof profile === "object") {
+        if ("name" in profile) profilePayload.name = toSafeString(profile.name);
+        if ("hobbies" in profile) profilePayload.hobbies = toStringArray(profile.hobbies);
+        if ("selfIntro" in profile) profilePayload.self_intro = toSafeString(profile.selfIntro);
+        if ("preferences" in profile) {
+          profilePayload.preferences =
+            profile.preferences && typeof profile.preferences === "object"
+              ? profile.preferences
+              : {};
+        }
+        if ("onboardingComplete" in profile) {
+          profilePayload.onboarding_complete = Boolean(profile.onboardingComplete);
+        }
+      }
+
+      const { error: insertProfileError } = await supabase.from("profiles").insert([profilePayload]);
 
       if (insertProfileError) {
         throw insertProfileError;

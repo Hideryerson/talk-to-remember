@@ -7,6 +7,7 @@ import { apiUrl } from "@/lib/api";
 
 interface AuthFormProps {
   onSuccess: () => void;
+  onStartRegistration?: (creds: { username: string; password: string }) => void;
 }
 
 async function readApiPayload(response: Response) {
@@ -27,7 +28,7 @@ function toFriendlyNetworkError(message: string) {
   return message;
 }
 
-export default function AuthForm({ onSuccess }: AuthFormProps) {
+export default function AuthForm({ onSuccess, onStartRegistration }: AuthFormProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -42,11 +43,36 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
     setLoading(true);
 
     try {
+      if (!isLogin) {
+        // Deferred Registration: Check username availability first
+        const checkRes = await fetch(apiUrl("/api/check-username"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: username.trim() }),
+        });
+        const checkPayload = await readApiPayload(checkRes);
+
+        if (!checkRes.ok || checkPayload?.error) {
+          throw new Error(checkPayload?.error || "Registration validation failed");
+        }
+
+        if (!checkPayload?.available) {
+          throw new Error("Username already exists");
+        }
+
+        // Available! Transport the user to Onboarding without creating the DB row
+        if (onStartRegistration) {
+          onStartRegistration({ username: username.trim(), password });
+          return;
+        }
+      }
+
+      // Standard Login Flow
       const response = await fetch(apiUrl("/api/auth"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: isLogin ? "login" : "register",
+          action: "login",
           username: username.trim(),
           password,
         }),
