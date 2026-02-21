@@ -7,7 +7,6 @@ import { Camera, Check, ChevronLeft, RotateCcw, Sparkles, X } from "lucide-react
 import {
   LiveSession,
   DEFAULT_SYSTEM_INSTRUCTION,
-  PHOTO_EDIT_TOOL,
   type LiveAppEvent,
   type LiveSessionCallbacks,
   type LiveTranscriptEntry,
@@ -258,7 +257,6 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     const createSession = (credential: string, useProxy: boolean) => {
       const createdSession = new LiveSession(credential, {
         systemInstruction,
-        tools: [PHOTO_EDIT_TOOL],
         voiceName: "Puck",
         useProxy,
       });
@@ -300,7 +298,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       saveConversation(updated);
     };
 
-    const commitUserMessage = (text: string) => {
+    const commitUserMessage = async (text: string) => {
       const normalized = text.replace(/\s+/g, " ").trim();
       if (!normalized) return;
       const lastMsg = messagesRef.current[messagesRef.current.length - 1];
@@ -313,6 +311,37 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       messagesRef.current = updated;
       appendTranscriptEntry({ role: "user", text: normalized, isFinal: true });
       saveConversation(updated);
+
+      // Async intent extraction using Gemini 2.5 Pro
+      try {
+        const response = await fetch(apiUrl("/api/extract-edit-intent"), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${getToken()}`,
+          },
+          body: JSON.stringify({ text: normalized }),
+        });
+        if (response.ok) {
+          const result = await response.json();
+          if (result.isEditRequest && result.editPrompt && result.editPrompt.trim()) {
+            const finalInstruction = result.editPrompt.trim();
+            setPendingEditPrompt(finalInstruction);
+            pendingEditPromptRef.current = finalInstruction;
+
+            // Queue the confirmation prompt to show after AI finishes speaking
+            setQueuedEditConfirm(true);
+
+            // If the voice was paused already or currently resting, show it now
+            if (!assistantAudioInCurrentTurnRef.current && sessionState !== "speaking") {
+              setShowEditConfirm(true);
+              setQueuedEditConfirm(false);
+            }
+          }
+        }
+      } catch (err) {
+        log("Intent extraction failed:", err);
+      }
     };
 
     const mergeTranscriptChunk = (prev: string, chunk: string) => {

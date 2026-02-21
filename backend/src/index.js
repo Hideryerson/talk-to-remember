@@ -25,22 +25,7 @@ const TTS_MODEL = "gemini-2.5-flash-preview-tts";
 const CHAT_TIMEOUT_MS = 60000;
 const TRANSCRIBE_TIMEOUT_MS = 30000;
 const TTS_TIMEOUT_MS = 30000;
-const LIVE_EDIT_TOOL_DECLARATION = {
-  name: "edit_photo",
-  description:
-    "Request an edit to the currently active photo. Call this only after the user explicitly asks to modify the photo.",
-  parameters: {
-    type: "object",
-    properties: {
-      editPrompt: {
-        type: "string",
-        description:
-          "Clear, concrete edit instruction to apply to the current photo.",
-      },
-    },
-    required: ["editPrompt"],
-  },
-};
+
 
 const DIRECTOR_NOTE = `Speak in a warm, soft, natural conversational tone.
 Moderate pace, gentle intonation, light pauses, like a friendly chat, not like reading an announcement.
@@ -731,6 +716,43 @@ app.post("/api/edit-image", async (req, res) => {
   }
 });
 
+app.post("/api/extract-edit-intent", async (req, res) => {
+  const { text } = req.body || {};
+  if (!text || typeof text !== "string") {
+    res.status(400).json({ error: "Missing text payload" });
+    return;
+  }
+
+  try {
+    const ai = createGeminiClient();
+    const systemInstruction = `You extract image editing intents from user transcripts.
+The user is speaking to a voice assistant about a photo they are looking at.
+Determine if the user's latest message contains a request to edit, modify, filter, or alter the photo.
+If YES, set isEditRequest to true, and extract their core instruction into editPrompt.
+If NO, set isEditRequest to false, and leave editPrompt empty.
+Output ONLY strict JSON matching this schema: {"isEditRequest": boolean, "editPrompt": string}`;
+
+    const response = await ai.models.generateContent({
+      model: CHAT_MODEL,
+      contents: [{ role: "user", parts: [{ text }] }],
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+      },
+    });
+
+    const outputText = response.text || "{}";
+    const result = JSON.parse(outputText);
+    res.json({
+      isEditRequest: Boolean(result.isEditRequest),
+      editPrompt: result.editPrompt || "",
+    });
+  } catch (error) {
+    console.error("Intent extraction error:", error);
+    res.status(500).json({ error: "Failed to extract intent" });
+  }
+});
+
 app.post("/api/tts", async (req, res) => {
   const { text } = req.body || {};
   if (!text || typeof text !== "string") {
@@ -865,61 +887,7 @@ function readTranscriptionFinalFlag(payload) {
   return typeof candidate === "boolean" ? candidate : null;
 }
 
-function withLiveTranscriptionEnabled(message) {
-  if (!message || typeof message !== "object" || !message.setup) {
-    return message;
-  }
 
-  const setup = message.setup;
-  if (!setup || typeof setup !== "object") {
-    return message;
-  }
-
-  const normalizeSetupFlag = (value) => {
-    if (value === true || value == null) return {};
-    if (typeof value === "object") return value;
-    return {};
-  };
-
-  if ("inputAudioTranscription" in setup) {
-    setup.inputAudioTranscription = normalizeSetupFlag(setup.inputAudioTranscription);
-  } else if ("input_audio_transcription" in setup) {
-    setup.input_audio_transcription = normalizeSetupFlag(setup.input_audio_transcription);
-  } else {
-    setup.inputAudioTranscription = {};
-  }
-
-  if ("outputAudioTranscription" in setup) {
-    setup.outputAudioTranscription = normalizeSetupFlag(setup.outputAudioTranscription);
-  } else if ("output_audio_transcription" in setup) {
-    setup.output_audio_transcription = normalizeSetupFlag(setup.output_audio_transcription);
-  } else {
-    setup.outputAudioTranscription = {};
-  }
-
-  const existingDeclarations = [];
-  const tools = Array.isArray(setup.tools) ? setup.tools : [];
-  for (const toolEntry of tools) {
-    const declarations = toolEntry?.functionDeclarations;
-    if (!Array.isArray(declarations)) continue;
-    existingDeclarations.push(...declarations);
-  }
-
-  const hasEditTool = existingDeclarations.some(
-    (declaration) => declaration?.name === "edit_photo"
-  );
-
-  if (!hasEditTool) {
-    setup.tools = [
-      ...tools,
-      {
-        functionDeclarations: [LIVE_EDIT_TOOL_DECLARATION],
-      },
-    ];
-  }
-
-  return message;
-}
 
 function extractTranscriptEvents(upstreamMessage) {
   const content = upstreamMessage?.serverContent ?? upstreamMessage?.server_content;
@@ -985,42 +953,7 @@ function extractTranscriptEvents(upstreamMessage) {
   return dedupedEvents;
 }
 
-function parseFunctionCallArgs(rawArgs) {
-  if (!rawArgs) return {};
-  if (typeof rawArgs === "object") return rawArgs;
-  if (typeof rawArgs === "string") {
-    try {
-      return JSON.parse(rawArgs);
-    } catch {
-      return {};
-    }
-  }
-  return {};
-}
 
-function extractEditInstructionFromToolCall(toolCallMessage) {
-  const functionCalls = toolCallMessage?.toolCall?.functionCalls;
-  if (!Array.isArray(functionCalls) || functionCalls.length === 0) {
-    return null;
-  }
-
-  const functionCall = functionCalls[0];
-  const name = normalizeWhitespace(functionCall?.name || "");
-  if (!name) return null;
-  if (name !== "edit_photo" && name !== "edit_image") return null;
-
-  const args = parseFunctionCallArgs(functionCall?.args);
-  const instruction = normalizeWhitespace(
-    args.editPrompt || args.instruction || args.prompt || args.query || ""
-  );
-  if (!instruction) return null;
-
-  return {
-    functionCallId: functionCall?.id || null,
-    functionName: name,
-    instruction,
-  };
-}
 
 function setupLiveProxy(server) {
   const wss = new WebSocketServer({ server, path: LIVE_PROXY_PATH });
@@ -1207,20 +1140,6 @@ function setupLiveProxy(server) {
         // Binary/audio payloads may not be JSON.
       }
 
-      if (parsed) {
-        const editToolIntent = extractEditInstructionFromToolCall(parsed);
-        if (editToolIntent) {
-          pendingEditRequest = editToolIntent;
-          safeSendJson(clientWs, {
-            type: "REQUIRE_EDIT_CONFIRM",
-            instruction: editToolIntent.instruction,
-            functionCallId: editToolIntent.functionCallId,
-            functionName: editToolIntent.functionName,
-          });
-          return;
-        }
-      }
-
       clientWs.send(data);
 
       try {
@@ -1283,7 +1202,8 @@ function setupLiveProxy(server) {
           return;
         }
 
-        const patched = withLiveTranscriptionEnabled(parsed);
+        const patched = JSON.parse(data.toString());
+        // Forward client setups unmodified, except verifying json parsed successfully
         outbound = JSON.stringify(patched);
       } catch {
         // Binary chunks and non-JSON payloads are forwarded unchanged.
