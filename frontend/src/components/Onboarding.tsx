@@ -8,6 +8,7 @@ import { loadVoices, speakText } from "@/lib/voices";
 
 interface OnboardingProps {
   onComplete: () => void;
+  onBackToAuth: () => void;
 }
 
 type StepField = "name" | "selfIntro" | "hobbies" | "photoTypes";
@@ -65,7 +66,7 @@ function toFriendlySaveError(message: string) {
   return message;
 }
 
-export default function Onboarding({ onComplete }: OnboardingProps) {
+export default function Onboarding({ onComplete, onBackToAuth }: OnboardingProps) {
   const [stepIndex, setStepIndex] = useState(0);
   const [values, setValues] = useState<FormValues>({
     name: "",
@@ -168,75 +169,86 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   const handleBack = () => {
     if (saving) return;
     setSaveError("");
+    if (stepIndex === 0) {
+      onBackToAuth();
+      return;
+    }
     setStepIndex((prev) => Math.max(prev - 1, 0));
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f7f8] flex flex-col items-center justify-center p-6">
-      <div className="w-full max-w-md">
-        <div className="flex justify-center mb-8">
-          <Image src="/logo-dark.png" alt="Recall" width={56} height={56} priority />
-        </div>
-        <div className="mb-8">
+    <div className="h-[100dvh] bg-[#f7f7f8] flex flex-col overflow-hidden">
+      {/* Sticky Header */}
+      <div className="w-full px-6 pt-12 pb-4 bg-[#f7f7f8] z-10 shrink-0">
+        <div className="max-w-md mx-auto">
           <h1 className="text-2xl font-semibold text-[#1d1d1f] tracking-tight text-center">Getting to know you</h1>
           <p className="text-sm text-[#86868b] mt-2 text-center">
             Step {stepIndex + 1} of {STEPS.length}
           </p>
-          <div className="mt-3 h-1.5 w-full rounded-full bg-[#ececf0] overflow-hidden">
+          <div className="mt-4 h-1.5 w-full rounded-full bg-[#ececf0] overflow-hidden">
             <div
               className="h-full bg-[#007aff] transition-all duration-300 rounded-full"
               style={{ width: progressWidth }}
             />
           </div>
         </div>
+      </div>
 
-        <div className="bg-white border border-gray-100 shadow-sm rounded-3xl p-5 mb-6">
-          <p className="text-xs font-semibold uppercase tracking-wider text-[#007aff] mb-1">
-            {currentStep.title}
-          </p>
-          <p className="text-[15px] leading-relaxed text-[#1d1d1f] mt-1">
-            {currentStep.prompt}
-          </p>
-        </div>
-
-        {currentStep.multiline ? (
-          <textarea
-            value={currentValue}
-            onChange={(e) => updateCurrentValue(e.target.value)}
-            placeholder={currentStep.placeholder}
-            className="w-full min-h-[140px] bg-white border border-gray-200 rounded-2xl px-5 py-4 text-[#1d1d1f] placeholder-[#86868b] outline-none focus:border-[#007aff] shadow-sm focus:ring-4 focus:ring-[#007aff]/10 transition-all resize-none"
-            disabled={saving}
-            autoFocus
-          />
-        ) : (
-          <input
-            type="text"
-            value={currentValue}
-            onChange={(e) => updateCurrentValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                void handleNext();
-              }
-            }}
-            placeholder={currentStep.placeholder}
-            className="w-full bg-white border border-gray-200 rounded-2xl px-5 py-4 text-[#1d1d1f] placeholder-[#86868b] outline-none focus:border-[#007aff] shadow-sm focus:ring-4 focus:ring-[#007aff]/10 transition-all"
-            disabled={saving}
-            autoFocus
-          />
-        )}
-
-        {saveError && (
-          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-            {saveError}
+      {/* Scrollable Chat Area */}
+      <div className="flex-1 overflow-y-auto px-6 py-2 flex flex-col w-full max-w-md mx-auto">
+        <div className="flex flex-col gap-6 pb-8 h-full justify-end">
+          {/* System Question Bubble */}
+          <div className="bg-[#007aff] text-white px-5 py-3.5 rounded-2xl rounded-tl-[4px] self-start max-w-[85%] shadow-sm">
+            <p className="text-[15px] leading-relaxed">
+              {currentStep.prompt}
+            </p>
           </div>
-        )}
 
-        <div className="mt-5 flex gap-2">
+          {/* User Input Bubble */}
+          <div className="self-end w-[90%] relative">
+            {currentStep.multiline ? (
+              <textarea
+                value={currentValue}
+                onChange={(e) => updateCurrentValue(e.target.value)}
+                placeholder={currentStep.placeholder}
+                className="w-full min-h-[140px] bg-white border-0 shadow-sm rounded-2xl rounded-tr-[4px] p-4 text-[#1d1d1f] placeholder-[#86868b] outline-none focus:ring-2 focus:ring-[#007aff]/30 transition-shadow resize-none"
+                disabled={saving}
+                autoFocus
+              />
+            ) : (
+              <input
+                type="text"
+                value={currentValue}
+                onChange={(e) => updateCurrentValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    void handleNext();
+                  }
+                }}
+                placeholder={currentStep.placeholder}
+                className="w-full bg-white border-0 shadow-sm rounded-2xl rounded-tr-[4px] px-5 py-4 text-[#1d1d1f] placeholder-[#86868b] outline-none focus:ring-2 focus:ring-[#007aff]/30 transition-shadow"
+                disabled={saving}
+                autoFocus
+              />
+            )}
+
+            {saveError && (
+              <div className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {saveError}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Sticky Footer */}
+      <div className="w-full px-6 py-6 bg-[#f7f7f8] shrink-0 safe-bottom">
+        <div className="max-w-md mx-auto flex gap-3">
           <button
             type="button"
             onClick={handleBack}
-            disabled={saving || stepIndex === 0}
-            className="flex-1 py-3 rounded-xl bg-[#f2f2f5] text-[#1d1d1f] font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={saving}
+            className="flex-1 py-3.5 rounded-xl bg-white border border-gray-200 text-[#1d1d1f] font-medium disabled:opacity-50 transition-colors shadow-sm active:bg-gray-50"
           >
             Back
           </button>
@@ -246,7 +258,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
               void handleNext();
             }}
             disabled={!canProceed}
-            className="flex-1 py-3 rounded-xl bg-[#007aff] text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 py-3.5 rounded-xl bg-[#007aff] text-white font-semibold disabled:opacity-50 transition-transform active:scale-[0.98] shadow-sm"
           >
             {saving ? "Saving..." : isLastStep ? "Finish" : "Next"}
           </button>

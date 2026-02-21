@@ -84,8 +84,8 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f7f8] flex items-center justify-center p-4">
-      <div className="w-full max-w-sm bg-white rounded-3xl border border-gray-200 shadow-sm p-6 pt-8">
+    <div className="min-h-screen bg-[#f7f7f8] flex flex-col items-center justify-center p-4">
+      <div className="w-full max-w-sm p-6">
         <div className="text-center mb-6 flex flex-col items-center">
           <Image src="/logo-dark.png" alt="Recall" width={56} height={56} className="mb-2" priority />
           <p className="text-sm text-[#86868b] mt-1">Recall the moment. Relive the story.</p>

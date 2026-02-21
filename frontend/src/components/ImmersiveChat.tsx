@@ -1236,13 +1236,13 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
             <div className="p-5 pb-4">
               <h3 className="text-lg font-semibold text-[#1d1d1f] mb-1">Confirm Edit</h3>
               <p className="text-sm text-[#1d1d1f]/80 mt-1">
-                The agent proposes to apply the following edit instruction to the active photo.
+                You can manually refine the edit instruction below before applying it to the active photo.
               </p>
             </div>
             <div className="px-5 mb-5 relative group">
               <textarea
                 value={pendingEditPrompt}
-                readOnly
+                onChange={(e) => setPendingEditPrompt(e.target.value)}
                 className="w-full h-24 p-4 rounded-2xl bg-white/50 border border-white/60 text-[#1d1d1f] text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#007aff]/50 transition-shadow pointer-events-auto shadow-inner"
               />
             </div>

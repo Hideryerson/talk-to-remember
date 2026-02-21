@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { isLoggedIn, getToken } from "@/lib/auth";
+import { isLoggedIn, getToken, setToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 import type { UserProfile } from "@/lib/types";
 import AuthForm from "@/components/AuthForm";
@@ -59,6 +59,10 @@ export default function Home() {
       <Onboarding
         onComplete={() => {
           checkState(); // re-fetch profile then go to conversations
+        }}
+        onBackToAuth={() => {
+          setToken("");
+          setState("auth");
         }}
       />
     );
