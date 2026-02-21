@@ -179,7 +179,7 @@ export default function Onboarding({ onComplete, onBackToAuth }: OnboardingProps
   return (
     <div className="h-[100dvh] bg-[#f7f7f8] flex flex-col overflow-hidden">
       {/* Sticky Header */}
-      <div className="w-full px-4 pt-4 pb-4 bg-white/90 backdrop-blur-md border-b border-gray-200 z-10 shrink-0 sticky top-0">
+      <div className="w-full px-4 pt-12 pb-4 bg-white/90 backdrop-blur-md border-b border-gray-200 z-10 shrink-0 sticky top-0">
         <div className="max-w-md mx-auto">
           <h1 className="text-xl font-semibold tracking-tight text-[#1d1d1f] text-center">Getting to know you</h1>
           <p className="text-sm text-[#86868b] mt-2 text-center">

@@ -1279,10 +1279,10 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       {showWelcomeBack && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
           <div className="bg-white/40 backdrop-blur-2xl border border-white/50 rounded-[2rem] shadow-xl p-6 max-w-sm w-full text-center">
-            <h2 className="text-xl font-semibold text-[#1d1d1f] mb-2 mt-2">
+            <h2 className="text-xl font-semibold text-white mb-2 mt-2">
               Welcome back!
             </h2>
-            <p className="text-[#86868b] mb-6">
+            <p className="text-white/80 mb-6">
               Ready to continue where you left off?
             </p>
             <div className="space-y-3">
@@ -1294,7 +1294,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
               </button>
               <button
                 onClick={handleBackFromWelcome}
-                className="w-full py-3 bg-white text-[#86868b] border border-gray-200 font-medium active:bg-gray-50 rounded-xl transition-colors shadow-sm"
+                className="w-full py-3 bg-white/20 text-white border border-white/30 backdrop-blur-md hover:bg-white/30 font-medium active:bg-white/40 rounded-xl transition-colors shadow-sm"
               >
                 Back
               </button>
