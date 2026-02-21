@@ -332,11 +332,16 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
             // Queue the confirmation prompt to show after AI finishes speaking
             setQueuedEditConfirm(true);
 
-            // If the voice was paused already or currently resting, show it now
-            if (!assistantAudioInCurrentTurnRef.current && sessionState !== "speaking") {
-              setShowEditConfirm(true);
-              setQueuedEditConfirm(false);
-            }
+            // To prevent stale closures and handle the case where the fetch completes 
+            // *after* the AI has already finished speaking, we use a functional state update
+            // to check the guaranteed current sessionState dynamically.
+            setSessionState((currentState) => {
+              if (!assistantAudioInCurrentTurnRef.current && currentState !== "speaking") {
+                setShowEditConfirm(true);
+                setQueuedEditConfirm(false);
+              }
+              return currentState;
+            });
           }
         }
       } catch (err) {
