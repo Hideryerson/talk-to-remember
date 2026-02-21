@@ -1077,12 +1077,20 @@ function setupLiveProxy(server) {
       try {
         geminiWs.send(
           JSON.stringify({
-            toolResponse: {
-              functionResponses: [
+            clientContent: {
+              turnComplete: true,
+              turns: [
                 {
-                  id: functionCallId,
-                  name: functionCallName || "edit_photo",
-                  response: responsePayload,
+                  role: "user",
+                  parts: [
+                    {
+                      functionResponse: {
+                        id: functionCallId,
+                        name: functionCallName || "edit_photo",
+                        response: responsePayload,
+                      },
+                    },
+                  ],
                 },
               ],
             },
