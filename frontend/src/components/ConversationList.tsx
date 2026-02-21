@@ -191,9 +191,9 @@ export default function ConversationList({ onSelect, onNew, greetingName }: Prop
   }
 
   return (
-    <div className="min-h-screen bg-[#f7f7f8] flex flex-col max-w-lg mx-auto">
-      {/* Header - ChatGPT style */}
-      <header className="bg-white border-b border-gray-200 px-4 py-4 safe-top">
+    <div className="h-[100dvh] overflow-hidden bg-[#f7f7f8] flex flex-col max-w-lg mx-auto relative">
+      {/* Header - Fixed */}
+      <header className="flex-shrink-0 z-10 bg-white/90 backdrop-blur-md border-b border-gray-200 px-4 py-4 safe-top sticky top-0">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold tracking-tight text-[#1d1d1f]">
             {`Hi, ${(greetingName || "").trim() || "there"}`}
@@ -208,8 +208,8 @@ export default function ConversationList({ onSelect, onNew, greetingName }: Prop
         </div>
       </header>
 
-      {/* List - ChatGPT style cards */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      {/* List - Scrollable */}
+      <div className="flex-1 overflow-y-auto w-full p-4 space-y-3 pb-8">
         {conversations.map((c) => (
           <div
             key={c.id}
@@ -220,9 +220,8 @@ export default function ConversationList({ onSelect, onNew, greetingName }: Prop
           >
             {/* Swipe actions (revealed on swipe) */}
             <div
-              className={`absolute right-0 top-0 bottom-0 flex items-center transition-all duration-200 ${
-                swipedId === c.id ? "w-40" : "w-0"
-              } overflow-hidden`}
+              className={`absolute right-0 top-0 bottom-0 flex items-center transition-all duration-200 ${swipedId === c.id ? "w-40" : "w-0"
+                } overflow-hidden`}
             >
               <button
                 onClick={(e) => {
@@ -249,9 +248,8 @@ export default function ConversationList({ onSelect, onNew, greetingName }: Prop
             {/* Conversation card - ChatGPT style */}
             <div
               onClick={() => handleCardClick(c)}
-              className={`bg-white hover:bg-gray-50 p-4 transition-all duration-200 cursor-pointer shadow-sm ${
-                swipedId === c.id ? "-translate-x-40" : "translate-x-0"
-              }`}
+              className={`bg-white hover:bg-gray-50 p-4 transition-all duration-200 cursor-pointer shadow-sm ${swipedId === c.id ? "-translate-x-40" : "translate-x-0"
+                }`}
             >
               {editingId === c.id ? (
                 // Editing mode
@@ -335,8 +333,8 @@ export default function ConversationList({ onSelect, onNew, greetingName }: Prop
         )}
       </div>
 
-      {/* New Chat Button - ChatGPT style */}
-      <div className="p-4 safe-bottom bg-white border-t border-gray-200">
+      {/* New Chat Button - Fixed */}
+      <div className="flex-shrink-0 z-10 sticky bottom-0 bg-white/90 backdrop-blur-md border-t border-gray-200 p-4 safe-bottom">
         <button
           onClick={onNew}
           className="w-full bg-[#007aff] hover:bg-[#0066d6] active:bg-[#0055b3] py-3.5 rounded-xl font-semibold text-white transition-colors"

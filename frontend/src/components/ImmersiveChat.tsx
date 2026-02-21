@@ -1157,23 +1157,25 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         )}
       </div>
 
-      {/* Connecting/Preparing indicator */}
-      {sessionState === "connecting" && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40">
-          <div className="bg-white/90 backdrop-blur-sm px-4 py-2.5 rounded-full flex items-center gap-2.5 shadow-lg border border-black/5">
-            <div className="preparing-dots" aria-hidden="true">
+      {/* Connecting state */}
+      {sessionState === "connecting" && !hydrated && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-40">
+          <div className="bg-white/40 backdrop-blur-xl px-6 py-4 rounded-full flex items-center gap-3.5 shadow-lg border border-white/50">
+            <div className="preparing-dots scale-110" aria-hidden="true">
               <span />
               <span />
               <span />
             </div>
-            <span className="text-sm font-medium text-[#1d1d1f]">Preparing</span>
+            <span className="text-base font-medium text-[#1d1d1f]">
+              Connecting to agent...
+            </span>
           </div>
         </div>
       )}
 
       {(sessionState === "listening" || sessionState === "speaking") && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40">
-          <div className="bg-white/90 backdrop-blur-sm px-4 py-2.5 rounded-full flex items-center gap-2.5 shadow-lg border border-black/5">
+          <div className="bg-white/40 backdrop-blur-xl px-4 py-2.5 rounded-full flex items-center gap-2.5 shadow-lg border border-white/50">
             {sessionState === "listening" ? (
               <>
                 <div className="listening-indicator">
@@ -1202,7 +1204,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
 
       {sessionState === "paused" && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40">
-          <div className="bg-white/90 backdrop-blur-sm px-4 py-2.5 rounded-full flex items-center gap-2.5 shadow-lg border border-black/5">
+          <div className="bg-white/40 backdrop-blur-xl px-4 py-2.5 rounded-full flex items-center gap-2.5 shadow-lg border border-white/50">
             <div className="w-2.5 h-2.5 bg-[#ff9f0a] rounded-full" />
             <span className="text-sm font-medium text-[#ff9f0a]">Paused</span>
           </div>
@@ -1227,31 +1229,40 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         </div>
       )}
 
+      {/* Confirm Edit Modal */}
       {showEditConfirm && pendingEditPrompt && !isEditing && (
         <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[88vw] max-w-md">
-          <div className="bg-white/92 backdrop-blur-xl border border-black/10 rounded-2xl shadow-xl p-4">
-            <div className="flex items-center gap-2 text-[#007aff] mb-2">
-              <Sparkles size={18} strokeWidth={2.2} />
-              <span className="text-sm font-semibold">Ready to edit</span>
+          <div className="bg-white/40 backdrop-blur-2xl border border-white/50 rounded-3xl shadow-xl overflow-hidden p-1 shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
+            <div className="p-5 pb-4">
+              <h3 className="text-lg font-semibold text-[#1d1d1f] mb-1">Confirm Edit</h3>
+              <p className="text-sm text-[#1d1d1f]/80 mt-1">
+                The agent proposes to apply the following edit instruction to the active photo.
+              </p>
             </div>
-            <p className="text-sm text-[#1d1d1f] leading-relaxed mb-3">
-              {pendingEditPrompt}
-            </p>
-            <button
-              onClick={() => {
-                void handleConfirmEdit();
-              }}
-              className="w-full h-11 rounded-xl bg-[#007aff] text-white font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
-            >
-              <Check size={18} strokeWidth={2.6} />
-              Confirm Edit
-            </button>
-            <button
-              onClick={handleCancelEdit}
-              className="w-full mt-2 h-10 rounded-xl text-[#86868b] font-medium active:bg-black/5 transition-colors"
-            >
-              Not now
-            </button>
+            <div className="px-5 mb-5 relative group">
+              <textarea
+                value={pendingEditPrompt}
+                readOnly
+                className="w-full h-24 p-4 rounded-2xl bg-white/50 border border-white/60 text-[#1d1d1f] text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#007aff]/50 transition-shadow pointer-events-auto shadow-inner"
+              />
+            </div>
+
+            <div className="flex gap-2 p-2">
+              <button
+                onClick={handleCancelEdit}
+                className="flex-1 py-3.5 bg-white/40 hover:bg-white/60 text-[#1d1d1f] rounded-2xl transition-colors font-medium border border-white/30 backdrop-blur-md"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  void handleConfirmEdit();
+                }}
+                className="flex-1 py-3.5 bg-[#007aff] hover:bg-[#0066d6] text-white rounded-2xl transition-colors font-medium shadow-sm"
+              >
+                Confirm
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1290,13 +1301,13 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       {/* Editing overlay */}
       {isEditing && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-          <div className="bg-white/95 backdrop-blur-md px-6 py-4 rounded-full flex items-center gap-3.5 shadow-xl border border-black/5">
-            <div className="preparing-dots scale-110" aria-hidden="true">
+          <div className="bg-white/40 backdrop-blur-2xl px-8 py-5 rounded-[2rem] flex items-center gap-4 shadow-[0_8px_32px_rgba(0,0,0,0.12)] border border-white/50">
+            <div className="preparing-dots scale-125" aria-hidden="true">
               <span />
               <span />
               <span />
             </div>
-            <span className="text-base font-medium text-[#1d1d1f]">Editing</span>
+            <span className="text-lg font-medium text-[#1d1d1f]">Editing</span>
           </div>
         </div>
       )}
@@ -1304,13 +1315,13 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       {/* Saving Session overlay */}
       {isSaving && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-          <div className="bg-white/95 backdrop-blur-md px-6 py-4 rounded-full flex items-center gap-3.5 shadow-xl border border-black/5">
-            <div className="preparing-dots scale-110" aria-hidden="true">
+          <div className="bg-white/40 backdrop-blur-2xl px-8 py-5 rounded-[2rem] flex items-center gap-4 shadow-[0_8px_32px_rgba(0,0,0,0.12)] border border-white/50">
+            <div className="preparing-dots scale-125" aria-hidden="true">
               <span />
               <span />
               <span />
             </div>
-            <span className="text-base font-medium text-[#1d1d1f]">Saving</span>
+            <span className="text-lg font-medium text-[#1d1d1f]">Saving</span>
           </div>
         </div>
       )}
