@@ -1,17 +1,21 @@
 "use client";
 
-import { Images, MessageSquareText, X } from "lucide-react";
+import { Images, MessageSquareText, Pause, Play, X } from "lucide-react";
 
 interface ControlBarProps {
   showTranscript: boolean;
+  isPaused: boolean;
   onToggleTranscript: () => void;
+  onTogglePause: () => void;
   onEndSession: () => void;
   onOpenGallery: () => void;
 }
 
 export default function ControlBar({
   showTranscript,
+  isPaused,
   onToggleTranscript,
+  onTogglePause,
   onEndSession,
   onOpenGallery,
 }: ControlBarProps) {
@@ -25,6 +29,15 @@ export default function ControlBar({
           aria-label={showTranscript ? "Hide transcript" : "Show transcript"}
         >
           <MessageSquareText size={22} strokeWidth={2} />
+        </button>
+
+        {/* Pause / Resume */}
+        <button
+          onClick={onTogglePause}
+          className={`glass-button ${isPaused ? "active" : ""}`}
+          aria-label={isPaused ? "Resume conversation" : "Pause conversation"}
+        >
+          {isPaused ? <Play size={22} strokeWidth={2.2} /> : <Pause size={22} strokeWidth={2.2} />}
         </button>
 
         {/* End Session */}

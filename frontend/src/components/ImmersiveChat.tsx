@@ -21,7 +21,7 @@ interface ImmersiveChatProps {
   onBack: () => void;
 }
 
-type SessionState = "idle" | "connecting" | "listening" | "speaking" | "editing";
+type SessionState = "idle" | "connecting" | "listening" | "speaking" | "editing" | "paused";
 
 const DEBUG = true;
 function log(...args: any[]) {
@@ -55,6 +55,7 @@ export default function ImmersiveChat({
   const [awaitingFirstAssistantTurn, setAwaitingFirstAssistantTurn] = useState(false);
   const [listeningLevel, setListeningLevel] = useState(0);
   const [pendingAssistantTranscript, setPendingAssistantTranscript] = useState("");
+  const [isPaused, setIsPaused] = useState(false);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -68,8 +69,11 @@ export default function ImmersiveChat({
   const awaitingFirstAssistantTurnRef = useRef(false);
   const assistantAudioInCurrentTurnRef = useRef(false);
   const pendingAssistantTranscriptRef = useRef("");
+  const pendingUserTranscriptRef = useRef("");
+  const userTranscriptCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFinalUserTranscriptRef = useRef("");
   const lastAutoEditPromptRef = useRef("");
+  const isPausedRef = useRef(false);
 
   // Keep refs in sync
   useEffect(() => {
@@ -81,7 +85,8 @@ export default function ImmersiveChat({
     imageMimeTypeRef.current = imageMimeType;
     awaitingFirstAssistantTurnRef.current = awaitingFirstAssistantTurn;
     pendingAssistantTranscriptRef.current = pendingAssistantTranscript;
-  }, [messages, imageVersions, convoId, currentImageIndex, isEditing, imageMimeType, awaitingFirstAssistantTurn, pendingAssistantTranscript]);
+    isPausedRef.current = isPaused;
+  }, [messages, imageVersions, convoId, currentImageIndex, isEditing, imageMimeType, awaitingFirstAssistantTurn, pendingAssistantTranscript, isPaused]);
 
   const appendTranscriptEntry = useCallback((entry: LiveTranscriptEntry) => {
     if (!entry.isFinal) return;
@@ -96,6 +101,13 @@ export default function ImmersiveChat({
       return [...prev, { role: entry.role, text: normalized, isFinal: true }];
     });
   }, []);
+
+  const clearUserTranscriptCommitTimer = () => {
+    if (userTranscriptCommitTimerRef.current) {
+      clearTimeout(userTranscriptCommitTimerRef.current);
+      userTranscriptCommitTimerRef.current = null;
+    }
+  };
 
   // Decay mic level so listening waveform reflects real input and settles smoothly.
   useEffect(() => {
@@ -132,6 +144,8 @@ export default function ImmersiveChat({
 
     // Cleanup on unmount
     return () => {
+      clearUserTranscriptCommitTimer();
+      pendingUserTranscriptRef.current = "";
       if (liveSessionRef.current) {
         liveSessionRef.current.disconnect();
       }
@@ -235,6 +249,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     };
 
     setSessionState("connecting");
+    setIsPaused(false);
+    isPausedRef.current = false;
     setShowWelcomeBack(false);
     setLiveError(null);
     setListeningLevel(0);
@@ -243,6 +259,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     awaitingFirstAssistantTurnRef.current = true;
     assistantAudioInCurrentTurnRef.current = false;
     pendingAssistantTranscriptRef.current = "";
+    clearUserTranscriptCommitTimer();
+    pendingUserTranscriptRef.current = "";
     lastFinalUserTranscriptRef.current = "";
     lastAutoEditPromptRef.current = "";
 
@@ -302,10 +320,67 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       return prompt;
     };
 
+    const tryAutoEditFromUserSpeech = (normalized: string) => {
+      const editPrompt = extractEditPrompt(normalized);
+      if (!editPrompt || isEditingRef.current) return;
+      if (lastAutoEditPromptRef.current === editPrompt) return;
+      lastAutoEditPromptRef.current = editPrompt;
+
+      void (async () => {
+        const activeSession = liveSessionRef.current;
+        activeSession?.interrupt();
+        const success = await handleEditImage(editPrompt);
+        const currentSession = liveSessionRef.current;
+        if (!currentSession) return;
+
+        if (success) {
+          const currentVersion = imageVersionsRef.current[currentImageIndexRef.current];
+          const currentDataUrl = currentVersion?.dataUrl;
+          if (currentDataUrl && currentDataUrl.includes(",")) {
+            const base64 = currentDataUrl.split(",")[1];
+            currentSession.sendImage(
+              base64,
+              imageMimeTypeRef.current,
+              `The photo is now edited based on this request: "${editPrompt}". Briefly acknowledge and continue the conversation.`
+            );
+          } else {
+            currentSession.sendText(
+              `The photo was edited as requested: "${editPrompt}". Briefly acknowledge and continue the conversation.`
+            );
+          }
+          return;
+        }
+
+        currentSession.sendText(
+          `The photo edit failed for this request: "${editPrompt}". Apologize briefly and ask the user to try a different edit request.`
+        );
+      })();
+    };
+
+    const flushPendingUserTranscript = () => {
+      clearUserTranscriptCommitTimer();
+      const normalized = pendingUserTranscriptRef.current.replace(/\s+/g, " ").trim();
+      pendingUserTranscriptRef.current = "";
+      if (!normalized) return;
+      if (lastFinalUserTranscriptRef.current === normalized) return;
+      lastFinalUserTranscriptRef.current = normalized;
+      commitUserMessage(normalized);
+      tryAutoEditFromUserSpeech(normalized);
+    };
+
+    const scheduleUserTranscriptFlush = (delayMs: number) => {
+      clearUserTranscriptCommitTimer();
+      userTranscriptCommitTimerRef.current = setTimeout(() => {
+        flushPendingUserTranscript();
+      }, delayMs);
+    };
+
     const sessionCallbacks: LiveSessionCallbacks = {
       onConnected: () => {
         log("Live session connected");
         setLiveError(null);
+        setIsPaused(false);
+        isPausedRef.current = false;
         setSessionState("connecting");
 
         const activeSession = liveSessionRef.current;
@@ -323,6 +398,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
             setSessionState("idle");
             setAwaitingFirstAssistantTurn(false);
             setPendingAssistantTranscript("");
+            clearUserTranscriptCommitTimer();
+            pendingUserTranscriptRef.current = "";
             awaitingFirstAssistantTurnRef.current = false;
             pendingAssistantTranscriptRef.current = "";
           }
@@ -330,10 +407,14 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       },
       onDisconnected: () => {
         log("Live session disconnected");
+        clearUserTranscriptCommitTimer();
         setListeningLevel(0);
         setCurrentlySpeaking(null);
+        setIsPaused(false);
+        isPausedRef.current = false;
         setAwaitingFirstAssistantTurn(false);
         setPendingAssistantTranscript("");
+        pendingUserTranscriptRef.current = "";
         awaitingFirstAssistantTurnRef.current = false;
         assistantAudioInCurrentTurnRef.current = false;
         pendingAssistantTranscriptRef.current = "";
@@ -357,6 +438,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         }
       },
       onAudioReceived: () => {
+        if (isPausedRef.current) return;
+        flushPendingUserTranscript();
         assistantAudioInCurrentTurnRef.current = true;
         setListeningLevel(0);
         setSessionState("speaking");
@@ -365,59 +448,29 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         setListeningLevel((prev) => Math.max(level, prev * 0.55));
       },
       onUserTranscription: (text, isFinal) => {
-        if (!isFinal) return;
+        if (isPausedRef.current) return;
         const normalized = text.replace(/\s+/g, " ").trim();
         if (!normalized) return;
-        if (lastFinalUserTranscriptRef.current === normalized) return;
-        lastFinalUserTranscriptRef.current = normalized;
-
-        commitUserMessage(normalized);
-
-        const editPrompt = extractEditPrompt(normalized);
-        if (!editPrompt || isEditingRef.current) return;
-        if (lastAutoEditPromptRef.current === editPrompt) return;
-        lastAutoEditPromptRef.current = editPrompt;
-
-        void (async () => {
-          const activeSession = liveSessionRef.current;
-          activeSession?.interrupt();
-          const success = await handleEditImage(editPrompt);
-          const currentSession = liveSessionRef.current;
-          if (!currentSession) return;
-
-          if (success) {
-            const currentVersion = imageVersionsRef.current[currentImageIndexRef.current];
-            const currentDataUrl = currentVersion?.dataUrl;
-            if (currentDataUrl && currentDataUrl.includes(",")) {
-              const base64 = currentDataUrl.split(",")[1];
-              currentSession.sendImage(
-                base64,
-                imageMimeTypeRef.current,
-                `The photo is now edited based on this request: "${editPrompt}". Briefly acknowledge and continue the conversation.`
-              );
-            } else {
-              currentSession.sendText(
-                `The photo was edited as requested: "${editPrompt}". Briefly acknowledge and continue the conversation.`
-              );
-            }
-            return;
-          }
-
-          currentSession.sendText(
-            `The photo edit failed for this request: "${editPrompt}". Apologize briefly and ask the user to try a different edit request.`
-          );
-        })();
+        pendingUserTranscriptRef.current = mergeTranscriptChunk(
+          pendingUserTranscriptRef.current,
+          normalized
+        );
+        scheduleUserTranscriptFlush(isFinal ? 220 : 900);
       },
       onTranscriptEntry: (entry) => {
         appendTranscriptEntry(entry);
       },
       onError: (error) => {
         log("Live session error:", error);
+        clearUserTranscriptCommitTimer();
         setLiveError(error);
         setListeningLevel(0);
         setCurrentlySpeaking(null);
+        setIsPaused(false);
+        isPausedRef.current = false;
         setAwaitingFirstAssistantTurn(false);
         setPendingAssistantTranscript("");
+        pendingUserTranscriptRef.current = "";
         awaitingFirstAssistantTurnRef.current = false;
         assistantAudioInCurrentTurnRef.current = false;
         pendingAssistantTranscriptRef.current = "";
@@ -434,11 +487,17 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         assistantAudioInCurrentTurnRef.current = false;
         pendingAssistantTranscriptRef.current = "";
         lastFinalUserTranscriptRef.current = "";
-        setSessionState("listening");
+        if (!isPausedRef.current) {
+          setSessionState("listening");
+        }
       },
       onPlaybackComplete: () => {
         setCurrentlySpeaking(null);
         assistantAudioInCurrentTurnRef.current = false;
+        if (isPausedRef.current) {
+          setSessionState("paused");
+          return;
+        }
         if (awaitingFirstAssistantTurnRef.current) {
           setAwaitingFirstAssistantTurn(false);
           awaitingFirstAssistantTurnRef.current = false;
@@ -451,6 +510,12 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
           commitAssistantMessage(pendingText);
           setPendingAssistantTranscript("");
           pendingAssistantTranscriptRef.current = "";
+        }
+        flushPendingUserTranscript();
+        if (isPausedRef.current) {
+          assistantAudioInCurrentTurnRef.current = false;
+          setSessionState("paused");
+          return;
         }
         if (awaitingFirstAssistantTurnRef.current && !assistantAudioInCurrentTurnRef.current) {
           setAwaitingFirstAssistantTurn(false);
@@ -499,9 +564,13 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       } else {
         setLiveError("Failed to connect to Gemini Live. Please retry.");
       }
+      clearUserTranscriptCommitTimer();
       setListeningLevel(0);
+      setIsPaused(false);
+      isPausedRef.current = false;
       setAwaitingFirstAssistantTurn(false);
       setPendingAssistantTranscript("");
+      pendingUserTranscriptRef.current = "";
       awaitingFirstAssistantTurnRef.current = false;
       assistantAudioInCurrentTurnRef.current = false;
       pendingAssistantTranscriptRef.current = "";
@@ -673,6 +742,10 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       imageVersionsRef.current = [firstVersion];
       setMessages([]);
       setTranscriptEntries([]);
+      setIsPaused(false);
+      isPausedRef.current = false;
+      clearUserTranscriptCommitTimer();
+      pendingUserTranscriptRef.current = "";
       messagesRef.current = [];
       setPendingAssistantTranscript("");
       pendingAssistantTranscriptRef.current = "";
@@ -785,6 +858,10 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
 
   // End session
   const handleEndSession = async () => {
+    clearUserTranscriptCommitTimer();
+    pendingUserTranscriptRef.current = "";
+    setIsPaused(false);
+    isPausedRef.current = false;
     // Close Live API connection
     if (liveSessionRef.current) {
       liveSessionRef.current.disconnect();
@@ -830,6 +907,36 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     }
 
     onBack();
+  };
+
+  const handleTogglePause = async () => {
+    const session = liveSessionRef.current;
+    if (!session || !session.isConnected()) return;
+
+    if (isPausedRef.current) {
+      const resumed = await session.startAudioInput();
+      if (!resumed) {
+        setLiveError("Unable to resume microphone. Please check microphone permission.");
+        return;
+      }
+      setLiveError(null);
+      setIsPaused(false);
+      isPausedRef.current = false;
+      setSessionState("listening");
+      return;
+    }
+
+    clearUserTranscriptCommitTimer();
+    pendingUserTranscriptRef.current = "";
+    session.interrupt();
+    session.stopAudioInput();
+    setListeningLevel(0);
+    setCurrentlySpeaking(null);
+    setPendingAssistantTranscript("");
+    pendingAssistantTranscriptRef.current = "";
+    setIsPaused(true);
+    isPausedRef.current = true;
+    setSessionState("paused");
   };
 
   // Gallery handlers
@@ -985,6 +1092,15 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         </div>
       )}
 
+      {sessionState === "paused" && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40">
+          <div className="bg-white/90 backdrop-blur-sm px-4 py-2.5 rounded-full flex items-center gap-2.5 shadow-lg border border-black/5">
+            <div className="w-2.5 h-2.5 bg-[#ff9f0a] rounded-full" />
+            <span className="text-sm font-medium text-[#ff9f0a]">Paused</span>
+          </div>
+        </div>
+      )}
+
       {/* Live connection/microphone error */}
       {liveError && (
         <div className="fixed top-20 left-4 right-4 z-40">
@@ -1054,7 +1170,11 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       {/* Control bar */}
       <ControlBar
         showTranscript={showTranscript}
+        isPaused={isPaused}
         onToggleTranscript={() => setShowTranscript(!showTranscript)}
+        onTogglePause={() => {
+          void handleTogglePause();
+        }}
         onEndSession={handleEndSession}
         onOpenGallery={() => setShowGallery(true)}
       />

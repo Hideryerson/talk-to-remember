@@ -899,7 +899,11 @@ function extractTranscriptEvents(upstreamMessage) {
   const userText = readTranscriptionText(resolvedInputPayload);
   if (userText) {
     const explicitFinal = readTranscriptionFinalFlag(resolvedInputPayload);
-    const fallbackFinal = Boolean(inputTranscription);
+    const fallbackFinal = Boolean(
+      inputTranscription?.isFinal ??
+        inputTranscription?.is_final ??
+        inputTranscription?.finished
+    );
     pushEvent("user", userText, explicitFinal ?? fallbackFinal);
   }
 

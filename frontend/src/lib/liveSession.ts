@@ -80,6 +80,11 @@ export class LiveSession {
   private mediaStreamSource: MediaStreamAudioSourceNode | null = null;
   private inputAudioContext: AudioContext | null = null;
   private processorNode: ScriptProcessorNode | null = null;
+  private ambientNoiseFloorRms = 0.004;
+  private speechGateOpenUntilMs = 0;
+  private readonly minSpeechRms = 0.01;
+  private readonly speechThresholdMultiplier = 2.7;
+  private readonly gateHoldMs = 420;
 
   // Connection setup tracking
   private connectResolve: ((connected: boolean) => void) | null = null;
@@ -335,7 +340,7 @@ export class LiveSession {
             ? rawText.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/\[\s*thinking[^\]]*]/gi, "").trim()
             : rawText.replace(/\s+/g, " ").trim();
         if (role && cleanedText) {
-          const isFinal = message.transcript.isFinal !== false;
+          const isFinal = message.transcript.isFinal === true;
           this.callbacks.onTranscriptEntry?.({ role, text: cleanedText, isFinal });
           if (role === "user") {
             this.callbacks.onUserTranscription?.(cleanedText, isFinal);
@@ -590,6 +595,11 @@ export class LiveSession {
     this.isPlaying = false;
   }
 
+  private resetInputNoiseGate(): void {
+    this.ambientNoiseFloorRms = 0.004;
+    this.speechGateOpenUntilMs = 0;
+  }
+
   /**
    * Start sending audio from microphone
    */
@@ -598,7 +608,14 @@ export class LiveSession {
       return false;
     }
 
+    if (this.mediaStream && this.processorNode && this.inputAudioContext) {
+      return true;
+    }
+
     try {
+      this.stopAudioInput();
+      this.resetInputNoiseGate();
+
       // Get microphone access
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -649,8 +666,34 @@ export class LiveSession {
       powerSum += float32Data[i] * float32Data[i];
     }
     const rms = Math.sqrt(powerSum / Math.max(float32Data.length, 1));
-    const normalizedLevel = Math.min(1, rms * 6);
+    if (!Number.isFinite(rms)) {
+      return;
+    }
+
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const dynamicThreshold = Math.max(
+      this.minSpeechRms,
+      this.ambientNoiseFloorRms * this.speechThresholdMultiplier
+    );
+    const effectiveThreshold = this.isPlaying ? dynamicThreshold * 1.35 : dynamicThreshold;
+    const isSpeech = rms >= effectiveThreshold;
+
+    if (isSpeech) {
+      this.speechGateOpenUntilMs = now + this.gateHoldMs;
+    } else {
+      const adaptRate = rms > this.ambientNoiseFloorRms ? 0.12 : 0.03;
+      this.ambientNoiseFloorRms += (rms - this.ambientNoiseFloorRms) * adaptRate;
+      this.ambientNoiseFloorRms = Math.min(Math.max(this.ambientNoiseFloorRms, 0.0025), 0.03);
+    }
+
+    const gateOpen = isSpeech || now < this.speechGateOpenUntilMs;
+    const normalizedLevel = gateOpen
+      ? Math.min(1, Math.max(0, (rms - effectiveThreshold * 0.45) * 16))
+      : 0;
     this.callbacks.onInputAudioLevel?.(normalizedLevel);
+    if (!gateOpen) {
+      return;
+    }
 
     // Convert Float32 to Int16 (PCM16)
     const int16Data = new Int16Array(float32Data.length);
@@ -704,6 +747,9 @@ export class LiveSession {
       this.mediaStream.getTracks().forEach((track) => track.stop());
       this.mediaStream = null;
     }
+
+    this.resetInputNoiseGate();
+    this.callbacks.onInputAudioLevel?.(0);
 
     log("Audio input stopped");
   }
