@@ -92,7 +92,8 @@ export class LiveSession {
   // Audio playback queue
   private audioQueue: ArrayBuffer[] = [];
   private isPlaying = false;
-  private currentSource: AudioBufferSourceNode | null = null;
+  private scheduledSources: AudioBufferSourceNode[] = [];
+  private nextPlayTime = 0;
 
   // For sending audio
   private mediaStream: MediaStream | null = null;
@@ -551,62 +552,71 @@ export class LiveSession {
   private queueAudio(audioData: ArrayBuffer): void {
     this.audioQueue.push(audioData);
     if (!this.isPlaying) {
-      this.playNextAudio();
+      this.isPlaying = true;
+      this.processAudioQueue();
+    } else {
+      this.processAudioQueue();
     }
   }
 
   /**
-   * Play next audio in queue
+   * Process all queued audio buffers and schedule them gaplessly
    */
-  private async playNextAudio(): Promise<void> {
-    if (this.audioQueue.length === 0 || !this.audioContext) {
-      this.isPlaying = false;
-      return;
-    }
-
-    this.isPlaying = true;
-    const audioData = this.audioQueue.shift()!;
+  private async processAudioQueue(): Promise<void> {
+    if (!this.audioContext || this.audioQueue.length === 0) return;
 
     try {
       if (this.audioContext.state === "suspended") {
         await this.audioContext.resume();
       }
 
-      // Convert PCM16 to Float32
-      const int16Array = new Int16Array(audioData);
-      const float32Array = new Float32Array(int16Array.length);
-      for (let i = 0; i < int16Array.length; i++) {
-        float32Array[i] = int16Array[i] / 32768;
-      }
+      while (this.audioQueue.length > 0) {
+        const audioData = this.audioQueue.shift()!;
 
-      // Create AudioBuffer
-      const audioBuffer = this.audioContext.createBuffer(
-        1,
-        float32Array.length,
-        24000
-      );
-      audioBuffer.copyToChannel(float32Array, 0);
-
-      // Play
-      const source = this.audioContext.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(this.audioContext.destination);
-      this.currentSource = source;
-
-      source.onended = () => {
-        this.currentSource = null;
-        if (this.audioQueue.length > 0) {
-          this.playNextAudio();
-          return;
+        // Convert PCM16 to Float32
+        const int16Array = new Int16Array(audioData);
+        const float32Array = new Float32Array(int16Array.length);
+        for (let i = 0; i < int16Array.length; i++) {
+          float32Array[i] = int16Array[i] / 32768;
         }
-        this.isPlaying = false;
-        this.callbacks.onPlaybackComplete?.();
-      };
 
-      source.start();
+        // Create AudioBuffer
+        const audioBuffer = this.audioContext.createBuffer(
+          1,
+          float32Array.length,
+          24000
+        );
+        audioBuffer.copyToChannel(float32Array, 0);
+
+        // Play
+        const source = this.audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(this.audioContext.destination);
+
+        // Schedule gapless
+        const currentTime = this.audioContext.currentTime;
+        if (this.nextPlayTime < currentTime) {
+          this.nextPlayTime = currentTime;
+        }
+
+        source.start(this.nextPlayTime);
+        this.nextPlayTime += audioBuffer.duration;
+        this.scheduledSources.push(source);
+
+        source.onended = () => {
+          const idx = this.scheduledSources.indexOf(source);
+          if (idx !== -1) {
+            this.scheduledSources.splice(idx, 1);
+          }
+          if (this.scheduledSources.length === 0 && this.audioQueue.length === 0) {
+            this.isPlaying = false;
+            this.callbacks.onPlaybackComplete?.();
+          }
+        };
+      }
     } catch (error) {
       log("Error playing audio:", error);
-      this.playNextAudio();
+      this.isPlaying = false;
     }
   }
 
@@ -615,12 +625,13 @@ export class LiveSession {
    */
   private stopPlayback(): void {
     this.audioQueue = [];
-    if (this.currentSource) {
+    this.scheduledSources.forEach((source) => {
       try {
-        this.currentSource.stop();
+        source.stop();
       } catch { }
-      this.currentSource = null;
-    }
+    });
+    this.scheduledSources = [];
+    this.nextPlayTime = 0;
     this.isPlaying = false;
   }
 
@@ -670,6 +681,12 @@ export class LiveSession {
       this.processorNode.onaudioprocess = (e) => {
         const inputData = e.inputBuffer.getChannelData(0);
         this.sendAudioChunk(inputData);
+
+        // ALWAYS zero out the output buffer to prevent microphone input from looping back to headphones
+        const outputData = e.outputBuffer.getChannelData(0);
+        for (let i = 0; i < outputData.length; i++) {
+          outputData[i] = 0;
+        }
       };
 
       this.mediaStreamSource.connect(this.processorNode);
