@@ -80,11 +80,11 @@ export class LiveSession {
   private mediaStreamSource: MediaStreamAudioSourceNode | null = null;
   private inputAudioContext: AudioContext | null = null;
   private processorNode: ScriptProcessorNode | null = null;
-  private ambientNoiseFloorRms = 0.004;
+  private ambientNoiseFloorRms = 0.0035;
   private speechGateOpenUntilMs = 0;
-  private readonly minSpeechRms = 0.01;
-  private readonly speechThresholdMultiplier = 2.7;
-  private readonly gateHoldMs = 420;
+  private readonly minSpeechRms = 0.0075;
+  private readonly speechThresholdMultiplier = 2.2;
+  private readonly gateHoldMs = 360;
 
   // Connection setup tracking
   private connectResolve: ((connected: boolean) => void) | null = null;
@@ -596,7 +596,7 @@ export class LiveSession {
   }
 
   private resetInputNoiseGate(): void {
-    this.ambientNoiseFloorRms = 0.004;
+    this.ambientNoiseFloorRms = 0.0035;
     this.speechGateOpenUntilMs = 0;
   }
 
@@ -691,15 +691,14 @@ export class LiveSession {
       ? Math.min(1, Math.max(0, (rms - effectiveThreshold * 0.45) * 16))
       : 0;
     this.callbacks.onInputAudioLevel?.(normalizedLevel);
-    if (!gateOpen) {
-      return;
-    }
 
     // Convert Float32 to Int16 (PCM16)
     const int16Data = new Int16Array(float32Data.length);
-    for (let i = 0; i < float32Data.length; i++) {
-      const s = Math.max(-1, Math.min(1, float32Data[i]));
-      int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    if (gateOpen) {
+      for (let i = 0; i < float32Data.length; i++) {
+        const s = Math.max(-1, Math.min(1, float32Data[i]));
+        int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      }
     }
 
     // Convert to base64

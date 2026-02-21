@@ -23,20 +23,30 @@ export default function FloatingTranscript({
   pendingAssistantText = "",
 }: FloatingTranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
+  const normalizedPending = pendingAssistantText.replace(/\s+/g, " ").trim();
 
   useEffect(() => {
-    if (scrollRef.current && visible) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (!visible) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    if (stickToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
     }
-  }, [messages, visible]);
+  }, [messages, visible, normalizedPending]);
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = distanceFromBottom <= 56;
+  };
 
   if (!visible) return null;
 
-  const normalizedPending = pendingAssistantText.replace(/\s+/g, " ").trim();
-
   if (messages.length === 0) {
     return (
-      <div className="fixed bottom-32 left-4 right-4 z-30 safe-bottom transcript-section">
+      <div className="fixed bottom-44 left-4 right-4 z-30 safe-bottom transcript-section">
         <div className="transcript-bubble px-4 py-3">
           {normalizedPending ? (
             <div className="flex justify-start">
@@ -70,12 +80,13 @@ export default function FloatingTranscript({
   }
 
   return (
-    <div className="fixed bottom-32 left-4 right-4 z-30 safe-bottom transcript-section">
+    <div className="fixed bottom-44 left-4 right-4 z-30 safe-bottom transcript-section">
       <div
         ref={scrollRef}
-        className="transcript-bubble p-2 max-h-[40vh] overflow-y-auto no-scrollbar ios-transition"
+        onScroll={handleScroll}
+        className="transcript-bubble p-2 max-h-[48vh] overflow-y-auto no-scrollbar ios-transition touch-pan-y"
       >
-        <div className="space-y-3">
+        <div className="space-y-3 pb-3">
           {renderMessages.map((msg, i) => (
             <div
               key={`transcript-${messages.length - renderMessages.length + i}`}
