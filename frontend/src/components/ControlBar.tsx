@@ -1,10 +1,11 @@
 "use client";
 
-import { Images, MessageSquareText, Pause, Play, X } from "lucide-react";
+import { Images, Loader2, MessageSquareText, Pause, Play, X } from "lucide-react";
 
 interface ControlBarProps {
   showTranscript: boolean;
   isPaused: boolean;
+  isSaving: boolean;
   onToggleTranscript: () => void;
   onTogglePause: () => void;
   onEndSession: () => void;
@@ -14,6 +15,7 @@ interface ControlBarProps {
 export default function ControlBar({
   showTranscript,
   isPaused,
+  isSaving,
   onToggleTranscript,
   onTogglePause,
   onEndSession,
@@ -25,8 +27,9 @@ export default function ControlBar({
         {/* Transcript Toggle */}
         <button
           onClick={onToggleTranscript}
-          className={`glass-button ${showTranscript ? "active" : ""}`}
+          className={`glass-button disabled:opacity-60 disabled:cursor-not-allowed ${showTranscript ? "active" : ""}`}
           aria-label={showTranscript ? "Hide transcript" : "Show transcript"}
+          disabled={isSaving}
         >
           <MessageSquareText size={22} strokeWidth={2} />
         </button>
@@ -34,8 +37,9 @@ export default function ControlBar({
         {/* Pause / Resume */}
         <button
           onClick={onTogglePause}
-          className={`glass-button ${isPaused ? "active" : ""}`}
+          className={`glass-button disabled:opacity-60 disabled:cursor-not-allowed ${isPaused ? "active" : ""}`}
           aria-label={isPaused ? "Resume conversation" : "Pause conversation"}
+          disabled={isSaving}
         >
           {isPaused ? <Play size={22} strokeWidth={2.2} /> : <Pause size={22} strokeWidth={2.2} />}
         </button>
@@ -43,17 +47,19 @@ export default function ControlBar({
         {/* End Session */}
         <button
           onClick={onEndSession}
-          className="glass-button danger"
+          className="glass-button danger disabled:opacity-60 disabled:cursor-not-allowed"
           aria-label="End session"
+          disabled={isSaving}
         >
-          <X size={22} strokeWidth={2.2} />
+          {isSaving ? <Loader2 size={22} strokeWidth={2.2} className="animate-spin" /> : <X size={22} strokeWidth={2.2} />}
         </button>
 
         {/* Version Gallery */}
         <button
           onClick={onOpenGallery}
-          className="glass-button"
+          className="glass-button disabled:opacity-60 disabled:cursor-not-allowed"
           aria-label="Photo versions"
+          disabled={isSaving}
         >
           <Images size={22} strokeWidth={2} />
         </button>

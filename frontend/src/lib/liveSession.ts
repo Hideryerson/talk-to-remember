@@ -37,6 +37,24 @@ export interface LiveTranscriptEntry {
   isFinal: boolean;
 }
 
+export interface LiveAppEvent {
+  type:
+    | "REQUIRE_EDIT_CONFIRM"
+    | "EDIT_STATUS"
+    | "EDIT_COMPLETED"
+    | "EDIT_FAILED"
+    | "EDIT_CONFIRM_CANCELLED";
+  instruction?: string;
+  functionCallId?: string;
+  functionName?: string;
+  status?: string;
+  version?: string;
+  versionNumber?: number;
+  imageBase64?: string;
+  mimeType?: string;
+  error?: string;
+}
+
 export interface LiveSessionCallbacks {
   onConnected?: () => void;
   onDisconnected?: () => void;
@@ -45,6 +63,7 @@ export interface LiveSessionCallbacks {
   onTextReceived?: (text: string, isFinal: boolean) => void;
   onUserTranscription?: (text: string, isFinal: boolean) => void;
   onTranscriptEntry?: (entry: LiveTranscriptEntry) => void;
+  onAppEvent?: (event: LiveAppEvent) => void;
   onToolCall?: (toolCall: ToolCall) => void;
   onError?: (error: string) => void;
   onInterrupted?: () => void;
@@ -316,6 +335,16 @@ export class LiveSession {
         this.state = "connected";
         this.callbacks.onConnected?.();
         this.connectResolve?.(true);
+        return;
+      }
+
+      if (typeof message.type === "string" && message.type.startsWith("EDIT")) {
+        this.callbacks.onAppEvent?.(message as LiveAppEvent);
+        return;
+      }
+
+      if (message.type === "REQUIRE_EDIT_CONFIRM") {
+        this.callbacks.onAppEvent?.(message as LiveAppEvent);
         return;
       }
 
@@ -821,6 +850,24 @@ export class LiveSession {
     });
   }
 
+  confirmEdit(instruction: string, imageBase64: string, mimeType: string): void {
+    if (this.state !== "connected") return;
+
+    this.send({
+      type: "CONFIRM_EDIT",
+      instruction,
+      imageBase64,
+      mimeType,
+    });
+  }
+
+  cancelEditConfirm(): void {
+    if (this.state !== "connected") return;
+    this.send({
+      type: "CANCEL_EDIT_CONFIRM",
+    });
+  }
+
   /**
    * Interrupt current response (barge-in)
    */
@@ -895,14 +942,14 @@ Your role:
 1. When shown a photo, describe what you see with curiosity and warmth
 2. Ask gentle questions about the moment, emotions, and memories it evokes
 3. Listen actively and respond thoughtfully to what the user shares
-4. If they want to edit the photo, ask for a clear edit instruction in one short sentence
+4. If they want to edit the photo, call the edit_photo function with a concise instruction
 5. Keep responses conversational and natural - you're having a flowing dialogue
 
 Guidelines:
 - Be warm but not overly enthusiastic
 - Ask one question at a time
 - Acknowledge emotions the user expresses
-- When they want to edit, confirm the intent briefly and continue after the edit
+- Only call edit_photo after a clear user request
 - Keep your responses concise for natural conversation flow
 
 Remember: This is an audio conversation. Keep responses natural and conversational.`;
@@ -911,8 +958,9 @@ Remember: This is an audio conversation. Keep responses natural and conversation
  * Photo edit tool definition
  */
 export const PHOTO_EDIT_TOOL: ToolDefinition = {
-  name: "edit_image",
-  description: "Edit the current photo based on the user's request. Call this when the user asks to modify, enhance, or change something in their photo.",
+  name: "edit_photo",
+  description:
+    "Request an edit to the current photo. Call this only when the user clearly asks to modify the photo.",
   parameters: {
     type: "object",
     properties: {

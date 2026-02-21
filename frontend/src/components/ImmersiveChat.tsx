@@ -7,6 +7,8 @@ import { Camera, Check, ChevronLeft, RotateCcw, Sparkles, X } from "lucide-react
 import {
   LiveSession,
   DEFAULT_SYSTEM_INSTRUCTION,
+  PHOTO_EDIT_TOOL,
+  type LiveAppEvent,
   type LiveSessionCallbacks,
   type LiveTranscriptEntry,
 } from "@/lib/liveSession";
@@ -56,6 +58,7 @@ export default function ImmersiveChat({
   const [listeningLevel, setListeningLevel] = useState(0);
   const [pendingAssistantTranscript, setPendingAssistantTranscript] = useState("");
   const [isPaused, setIsPaused] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [pendingEditPrompt, setPendingEditPrompt] = useState<string | null>(null);
   const [showEditConfirm, setShowEditConfirm] = useState(false);
 
@@ -74,11 +77,8 @@ export default function ImmersiveChat({
   const pendingUserTranscriptRef = useRef("");
   const userTranscriptCommitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFinalUserTranscriptRef = useRef("");
-  const lastAutoEditPromptRef = useRef("");
   const isPausedRef = useRef(false);
   const pendingEditPromptRef = useRef<string | null>(null);
-  const revealEditConfirmAfterAssistantRef = useRef(false);
-  const assistantRespondedForPendingEditRef = useRef(false);
 
   // Keep refs in sync
   useEffect(() => {
@@ -115,12 +115,13 @@ export default function ImmersiveChat({
     }
   };
 
-  const clearPendingEditConfirmation = useCallback(() => {
+  const clearPendingEditConfirmation = useCallback((notifyBackend: boolean = false) => {
     setShowEditConfirm(false);
     setPendingEditPrompt(null);
     pendingEditPromptRef.current = null;
-    revealEditConfirmAfterAssistantRef.current = false;
-    assistantRespondedForPendingEditRef.current = false;
+    if (notifyBackend) {
+      liveSessionRef.current?.cancelEditConfirm();
+    }
   }, []);
 
   // Decay mic level so listening waveform reflects real input and settles smoothly.
@@ -256,6 +257,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     const createSession = (credential: string, useProxy: boolean) => {
       const createdSession = new LiveSession(credential, {
         systemInstruction,
+        tools: [PHOTO_EDIT_TOOL],
         voiceName: "Puck",
         useProxy,
       });
@@ -266,8 +268,9 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     setSessionState("connecting");
     setIsPaused(false);
     isPausedRef.current = false;
+    setIsEditing(false);
+    isEditingRef.current = false;
     clearPendingEditConfirmation();
-    lastAutoEditPromptRef.current = "";
     setShowWelcomeBack(false);
     setLiveError(null);
     setListeningLevel(0);
@@ -320,47 +323,6 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       return `${prev}${cleanedChunk.startsWith("'") || cleanedChunk.startsWith(",") || cleanedChunk.startsWith(".") ? "" : " "}${cleanedChunk}`.trim();
     };
 
-    const extractEditPrompt = (spokenText: string): string | null => {
-      const normalized = spokenText.replace(/\s+/g, " ").trim();
-      if (!normalized) return null;
-      const lower = normalized.toLowerCase();
-      const englishEditIntent = /(edit|change|remove|erase|replace|add|crop|blur|brighten|darken|adjust|enhance|retouch|fix)/.test(lower);
-      const chineseEditIntent = /(编辑|修改|去掉|删除|移除|裁剪|模糊|提亮|调亮|调暗|添加|替换|增强|美化)/.test(normalized);
-      if (!englishEditIntent && !chineseEditIntent) return null;
-
-      let prompt = normalized
-        .replace(/^(can you|could you|please|let's|i want to|i'd like to|help me)\s+/i, "")
-        .replace(/^(帮我|请|请你|可以|能不能|我想|我要)\s*/u, "")
-        .trim();
-      if (!prompt) prompt = normalized;
-      return prompt;
-    };
-
-    const queueEditConfirmation = (normalized: string) => {
-      const editPrompt = extractEditPrompt(normalized);
-      if (!editPrompt || isEditingRef.current) return;
-      const trimmedPrompt = editPrompt.replace(/\s+/g, " ").trim();
-      if (!trimmedPrompt) return;
-      if (
-        pendingEditPromptRef.current === trimmedPrompt &&
-        revealEditConfirmAfterAssistantRef.current
-      ) {
-        return;
-      }
-      if (
-        lastAutoEditPromptRef.current === trimmedPrompt &&
-        pendingEditPromptRef.current === trimmedPrompt
-      ) {
-        return;
-      }
-      lastAutoEditPromptRef.current = trimmedPrompt;
-      setPendingEditPrompt(trimmedPrompt);
-      pendingEditPromptRef.current = trimmedPrompt;
-      setShowEditConfirm(false);
-      revealEditConfirmAfterAssistantRef.current = true;
-      assistantRespondedForPendingEditRef.current = false;
-    };
-
     const flushPendingUserTranscript = () => {
       clearUserTranscriptCommitTimer();
       const normalized = pendingUserTranscriptRef.current.replace(/\s+/g, " ").trim();
@@ -369,7 +331,6 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       if (lastFinalUserTranscriptRef.current === normalized) return;
       lastFinalUserTranscriptRef.current = normalized;
       commitUserMessage(normalized);
-      queueEditConfirmation(normalized);
     };
 
     const scheduleUserTranscriptFlush = (delayMs: number) => {
@@ -377,6 +338,25 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       userTranscriptCommitTimerRef.current = setTimeout(() => {
         flushPendingUserTranscript();
       }, delayMs);
+    };
+
+    const applyEditedImageVersion = (
+      imageBase64: string,
+      editedMimeType: string,
+      editInstruction: string
+    ) => {
+      const newDataUrl = `data:${editedMimeType || imageMimeTypeRef.current};base64,${imageBase64}`;
+      const nextVersion: ImageVersion = {
+        dataUrl: newDataUrl,
+        editPrompt: editInstruction,
+        timestamp: Date.now(),
+      };
+      const updatedVersions = [...imageVersionsRef.current, nextVersion];
+      setImageVersions(updatedVersions);
+      imageVersionsRef.current = updatedVersions;
+      setCurrentImageIndex(updatedVersions.length - 1);
+      currentImageIndexRef.current = updatedVersions.length - 1;
+      saveConversation(undefined, updatedVersions);
     };
 
     const sessionCallbacks: LiveSessionCallbacks = {
@@ -413,7 +393,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         log("Live session disconnected");
         clearUserTranscriptCommitTimer();
         clearPendingEditConfirmation();
-        lastAutoEditPromptRef.current = "";
+        setIsEditing(false);
+        isEditingRef.current = false;
         setListeningLevel(0);
         setCurrentlySpeaking(null);
         setIsPaused(false);
@@ -429,9 +410,6 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       },
       onTextReceived: (text, isFinal) => {
         log("Text received:", text, "final:", isFinal);
-        if (revealEditConfirmAfterAssistantRef.current && text.trim()) {
-          assistantRespondedForPendingEditRef.current = true;
-        }
         const merged = mergeTranscriptChunk(pendingAssistantTranscriptRef.current, text);
         pendingAssistantTranscriptRef.current = merged;
         setPendingAssistantTranscript(merged);
@@ -447,9 +425,6 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       },
       onAudioReceived: () => {
         if (isPausedRef.current) return;
-        if (revealEditConfirmAfterAssistantRef.current) {
-          assistantRespondedForPendingEditRef.current = true;
-        }
         flushPendingUserTranscript();
         assistantAudioInCurrentTurnRef.current = true;
         setListeningLevel(0);
@@ -471,11 +446,74 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       onTranscriptEntry: (entry) => {
         appendTranscriptEntry(entry);
       },
+      onAppEvent: (event: LiveAppEvent) => {
+        if (event.type === "REQUIRE_EDIT_CONFIRM") {
+          const instruction = event.instruction?.trim();
+          if (!instruction) return;
+          setPendingEditPrompt(instruction);
+          pendingEditPromptRef.current = instruction;
+          setShowEditConfirm(true);
+          setIsEditing(false);
+          isEditingRef.current = false;
+          if (!isPausedRef.current) {
+            setSessionState("listening");
+          }
+          return;
+        }
+
+        if (event.type === "EDIT_STATUS" && event.status === "editing") {
+          setShowEditConfirm(false);
+          setIsEditing(true);
+          isEditingRef.current = true;
+          setSessionState("editing");
+          return;
+        }
+
+        if (event.type === "EDIT_COMPLETED") {
+          setIsEditing(false);
+          isEditingRef.current = false;
+          const instruction =
+            (event.instruction || pendingEditPromptRef.current || "").trim();
+          if (event.imageBase64 && instruction) {
+            applyEditedImageVersion(
+              event.imageBase64,
+              event.mimeType || imageMimeTypeRef.current,
+              instruction
+            );
+          }
+          clearPendingEditConfirmation();
+          setSessionState("connecting");
+          return;
+        }
+
+        if (event.type === "EDIT_FAILED") {
+          setIsEditing(false);
+          isEditingRef.current = false;
+          const instruction = event.instruction?.trim();
+          if (instruction) {
+            setPendingEditPrompt(instruction);
+            pendingEditPromptRef.current = instruction;
+            setShowEditConfirm(true);
+          }
+          if (event.error) {
+            setLiveError(event.error);
+          }
+          if (!isPausedRef.current) {
+            setSessionState("listening");
+          }
+          return;
+        }
+
+        if (event.type === "EDIT_CONFIRM_CANCELLED") {
+          clearPendingEditConfirmation();
+        }
+      },
       onError: (error) => {
         log("Live session error:", error);
         clearUserTranscriptCommitTimer();
         clearPendingEditConfirmation();
-        lastAutoEditPromptRef.current = "";
+        setIsEditing(false);
+        isEditingRef.current = false;
         setLiveError(error);
         setListeningLevel(0);
         setCurrentlySpeaking(null);
@@ -492,9 +530,6 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       },
       onInterrupted: () => {
         log("Response interrupted");
-        if (revealEditConfirmAfterAssistantRef.current) {
-          assistantRespondedForPendingEditRef.current = true;
-        }
         setCurrentlySpeaking(null);
         setAwaitingFirstAssistantTurn(false);
         setPendingAssistantTranscript("");
@@ -527,15 +562,6 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
           pendingAssistantTranscriptRef.current = "";
         }
         flushPendingUserTranscript();
-        if (
-          revealEditConfirmAfterAssistantRef.current &&
-          assistantRespondedForPendingEditRef.current &&
-          pendingEditPromptRef.current
-        ) {
-          revealEditConfirmAfterAssistantRef.current = false;
-          assistantRespondedForPendingEditRef.current = false;
-          setShowEditConfirm(true);
-        }
         if (isPausedRef.current) {
           assistantAudioInCurrentTurnRef.current = false;
           setSessionState("paused");
@@ -590,7 +616,6 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       }
       clearUserTranscriptCommitTimer();
       clearPendingEditConfirmation();
-      lastAutoEditPromptRef.current = "";
       setListeningLevel(0);
       setIsPaused(false);
       isPausedRef.current = false;
@@ -636,7 +661,6 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         .filter((item: LiveTranscriptEntry | null): item is LiveTranscriptEntry => item !== null);
       setTranscriptEntries(transcriptHistory);
       clearPendingEditConfirmation();
-      lastAutoEditPromptRef.current = "";
       setPendingAssistantTranscript("");
       pendingAssistantTranscriptRef.current = "";
 
@@ -773,7 +797,6 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       isPausedRef.current = false;
       clearUserTranscriptCommitTimer();
       clearPendingEditConfirmation();
-      lastAutoEditPromptRef.current = "";
       pendingUserTranscriptRef.current = "";
       messagesRef.current = [];
       setPendingAssistantTranscript("");
@@ -825,70 +848,12 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     onBack();
   };
 
-  // Edit image handler (called via Function Calling)
-  const handleEditImage = async (prompt: string): Promise<boolean> => {
-    if (!prompt.trim() || imageVersionsRef.current.length === 0 || isEditingRef.current) {
-      return false;
-    }
-
-    setIsEditing(true);
-    isEditingRef.current = true;
-    setSessionState("editing");
-
-    try {
-      const safeIndex = Math.min(
-        Math.max(currentImageIndexRef.current, 0),
-        imageVersionsRef.current.length - 1
-      );
-      const currentVersion = imageVersionsRef.current[safeIndex];
-      if (!currentVersion?.dataUrl) {
-        throw new Error("No image version available for editing.");
-      }
-      const base64 = currentVersion.dataUrl.split(",")[1];
-
-      const res = await fetch(apiUrl("/api/edit-image"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageBase64: base64,
-          mimeType: imageMimeTypeRef.current,
-          editPrompt: prompt,
-        }),
-      });
-
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-
-      const newDataUrl = `data:${data.mimeType};base64,${data.imageBase64}`;
-      const newVersion: ImageVersion = {
-        dataUrl: newDataUrl,
-        editPrompt: prompt,
-        timestamp: Date.now(),
-      };
-
-      const newVersions = [...imageVersionsRef.current, newVersion];
-      setImageVersions(newVersions);
-      setCurrentImageIndex(newVersions.length - 1);
-      currentImageIndexRef.current = newVersions.length - 1;
-      imageVersionsRef.current = newVersions;
-
-      saveConversation(undefined, newVersions);
-      log("Image edited successfully:", prompt);
-      return true;
-    } catch (err: any) {
-      console.error("Edit failed:", err);
-      return false;
-    } finally {
-      setIsEditing(false);
-      isEditingRef.current = false;
-    }
-  };
-
   // End session
   const handleEndSession = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
     clearUserTranscriptCommitTimer();
     clearPendingEditConfirmation();
-    lastAutoEditPromptRef.current = "";
     pendingUserTranscriptRef.current = "";
     setIsPaused(false);
     isPausedRef.current = false;
@@ -898,45 +863,49 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       liveSessionRef.current = null;
     }
 
-    // Generate summary if meaningful conversation
-    if (messages.length >= 2) {
-      try {
-        const convoText = messages.map((m) => `${m.role}: ${m.text}`).join("\n");
-        const summaryRes = await fetch(apiUrl("/api/chat"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            messages: [
-              {
-                role: "user",
-                text: `Summarize this conversation in 2-3 sentences for a user profile. Focus on what the user recalled, their emotions, and preferences:\n\n${convoText}`,
-              },
-            ],
-          }),
-        });
-        const summaryData = await summaryRes.json();
-
-        if (summaryData.text && profile) {
-          await fetch(apiUrl("/api/profile"), {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${getToken()}`,
-            },
+    try {
+      // Generate summary if meaningful conversation
+      if (messages.length >= 2) {
+        try {
+          const convoText = messages.map((m) => `${m.role}: ${m.text}`).join("\n");
+          const summaryRes = await fetch(apiUrl("/api/chat"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              conversationSummaries: [
-                ...profile.conversationSummaries,
-                `[${new Date().toLocaleDateString()}] ${summaryData.text}`,
+              messages: [
+                {
+                  role: "user",
+                  text: `Summarize this conversation in 2-3 sentences for a user profile. Focus on what the user recalled, their emotions, and preferences:\n\n${convoText}`,
+                },
               ],
             }),
           });
-        }
-      } catch (err) {
-        console.error("Failed to summarize:", err);
-      }
-    }
+          const summaryData = await summaryRes.json();
 
-    onBack();
+          if (summaryData.text && profile) {
+            await fetch(apiUrl("/api/profile"), {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${getToken()}`,
+              },
+              body: JSON.stringify({
+                conversationSummaries: [
+                  ...profile.conversationSummaries,
+                  `[${new Date().toLocaleDateString()}] ${summaryData.text}`,
+                ],
+              }),
+            });
+          }
+        } catch (err) {
+          console.error("Failed to summarize:", err);
+        }
+      }
+
+      onBack();
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleTogglePause = async () => {
@@ -974,9 +943,17 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     const session = liveSessionRef.current;
     if (!editPrompt || !session) return;
 
+    const activeVersion = imageVersionsRef.current[currentImageIndexRef.current];
+    if (!activeVersion?.dataUrl?.includes(",")) {
+      setLiveError("No active photo available for editing.");
+      return;
+    }
+
+    const base64 = activeVersion.dataUrl.split(",")[1];
     setShowEditConfirm(false);
-    revealEditConfirmAfterAssistantRef.current = false;
-    assistantRespondedForPendingEditRef.current = false;
+    setIsEditing(true);
+    isEditingRef.current = true;
+    setSessionState("editing");
 
     if (isPausedRef.current) {
       setIsPaused(false);
@@ -985,55 +962,15 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
 
     clearUserTranscriptCommitTimer();
     pendingUserTranscriptRef.current = "";
-    session.interrupt();
-    session.stopAudioInput();
-    setCurrentlySpeaking(null);
-    setPendingAssistantTranscript("");
-    pendingAssistantTranscriptRef.current = "";
-    setSessionState("editing");
-
-    const success = await handleEditImage(editPrompt);
-    const currentSession = liveSessionRef.current;
-    if (!currentSession) return;
-
-    if (success) {
-      // Version number is the total count (v2 means second version)
-      const versionNumber = imageVersionsRef.current.length;
-      const activeVersion = imageVersionsRef.current[currentImageIndexRef.current];
-      if (activeVersion?.dataUrl?.includes(",")) {
-        const base64 = activeVersion.dataUrl.split(",")[1];
-        currentSession.sendImage(
-          base64,
-          imageMimeTypeRef.current,
-          `Created version v${versionNumber}. Briefly acknowledge the update and continue the conversation with one short question.`
-        );
-      } else {
-        currentSession.sendText(
-          `Created version v${versionNumber}. Briefly acknowledge the update and continue the conversation with one short question.`
-        );
-      }
-      clearPendingEditConfirmation();
-      lastAutoEditPromptRef.current = "";
-      // Keep editing state - will transition to speaking when AI audio arrives
-    } else {
-      setPendingEditPrompt(editPrompt);
-      pendingEditPromptRef.current = editPrompt;
-      setShowEditConfirm(true);
-      currentSession.sendText(
-        `The edit request failed: "${editPrompt}". Apologize briefly and ask the user if they want to try another edit instruction.`
-      );
-      setSessionState("listening");
-    }
-
-    const resumed = await currentSession.startAudioInput();
-    if (!resumed) {
-      setLiveError("Microphone failed to restart after edit. Please tap pause/continue to re-enable.");
+    session.confirmEdit(editPrompt, base64, imageMimeTypeRef.current);
+    const micReady = await session.startAudioInput();
+    if (!micReady) {
+      setLiveError("Microphone failed to restart for continued conversation.");
     }
   };
 
   const handleCancelEdit = () => {
-    clearPendingEditConfirmation();
-    lastAutoEditPromptRef.current = "";
+    clearPendingEditConfirmation(true);
   };
 
   // Gallery handlers
@@ -1306,6 +1243,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       <ControlBar
         showTranscript={showTranscript}
         isPaused={isPaused}
+        isSaving={isSaving}
         onToggleTranscript={() => setShowTranscript(!showTranscript)}
         onTogglePause={() => {
           void handleTogglePause();

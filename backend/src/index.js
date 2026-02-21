@@ -25,6 +25,22 @@ const TTS_MODEL = "gemini-2.5-flash-preview-tts";
 const CHAT_TIMEOUT_MS = 60000;
 const TRANSCRIBE_TIMEOUT_MS = 30000;
 const TTS_TIMEOUT_MS = 30000;
+const LIVE_EDIT_TOOL_DECLARATION = {
+  name: "edit_photo",
+  description:
+    "Request an edit to the currently active photo. Call this only after the user explicitly asks to modify the photo.",
+  parameters: {
+    type: "object",
+    properties: {
+      editPrompt: {
+        type: "string",
+        description:
+          "Clear, concrete edit instruction to apply to the current photo.",
+      },
+    },
+    required: ["editPrompt"],
+  },
+};
 
 const DIRECTOR_NOTE = `Speak in a warm, soft, natural conversational tone.
 Moderate pace, gentle intonation, light pauses, like a friendly chat, not like reading an announcement.
@@ -657,6 +673,48 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
+async function runImageEdit({ imageBase64, mimeType, editPrompt }) {
+  if (!imageBase64 || !editPrompt) {
+    throw new Error("imageBase64 and editPrompt are required");
+  }
+
+  const ai = createGeminiClient();
+  const response = await ai.models.generateContent({
+    model: IMAGE_MODEL,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          {
+            inlineData: {
+              data: imageBase64,
+              mimeType: mimeType || "image/jpeg",
+            },
+          },
+          { text: `Edit this image: ${editPrompt}` },
+        ],
+      },
+    ],
+    config: {
+      responseModalities: ["image", "text"],
+    },
+  });
+
+  const parts = response.candidates?.[0]?.content?.parts || [];
+  for (const part of parts) {
+    if (part.inlineData?.data) {
+      return {
+        imageBase64: part.inlineData.data,
+        mimeType: part.inlineData.mimeType || "image/jpeg",
+      };
+    }
+  }
+
+  const fallbackMessage =
+    parts.find((part) => part.text)?.text || "No image returned from model";
+  throw new Error(fallbackMessage);
+}
+
 app.post("/api/edit-image", async (req, res) => {
   const { imageBase64, mimeType, editPrompt } = req.body || {};
 
@@ -666,42 +724,8 @@ app.post("/api/edit-image", async (req, res) => {
   }
 
   try {
-    const ai = createGeminiClient();
-    const response = await ai.models.generateContent({
-      model: IMAGE_MODEL,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              inlineData: {
-                data: imageBase64,
-                mimeType: mimeType || "image/jpeg",
-              },
-            },
-            { text: `Edit this image: ${editPrompt}` },
-          ],
-        },
-      ],
-      config: {
-        responseModalities: ["image", "text"],
-      },
-    });
-
-    const parts = response.candidates?.[0]?.content?.parts || [];
-    for (const part of parts) {
-      if (part.inlineData?.data) {
-        res.json({
-          imageBase64: part.inlineData.data,
-          mimeType: part.inlineData.mimeType || "image/jpeg",
-        });
-        return;
-      }
-    }
-
-    const fallbackMessage =
-      parts.find((part) => part.text)?.text || "No image returned from model";
-    res.status(500).json({ error: fallbackMessage });
+    const result = await runImageEdit({ imageBase64, mimeType, editPrompt });
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: error?.message || "Image edit failed" });
   }
@@ -873,6 +897,27 @@ function withLiveTranscriptionEnabled(message) {
     setup.outputAudioTranscription = {};
   }
 
+  const existingDeclarations = [];
+  const tools = Array.isArray(setup.tools) ? setup.tools : [];
+  for (const toolEntry of tools) {
+    const declarations = toolEntry?.functionDeclarations;
+    if (!Array.isArray(declarations)) continue;
+    existingDeclarations.push(...declarations);
+  }
+
+  const hasEditTool = existingDeclarations.some(
+    (declaration) => declaration?.name === "edit_photo"
+  );
+
+  if (!hasEditTool) {
+    setup.tools = [
+      ...tools,
+      {
+        functionDeclarations: [LIVE_EDIT_TOOL_DECLARATION],
+      },
+    ];
+  }
+
   return message;
 }
 
@@ -938,6 +983,43 @@ function extractTranscriptEvents(upstreamMessage) {
   return dedupedEvents;
 }
 
+function parseFunctionCallArgs(rawArgs) {
+  if (!rawArgs) return {};
+  if (typeof rawArgs === "object") return rawArgs;
+  if (typeof rawArgs === "string") {
+    try {
+      return JSON.parse(rawArgs);
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function extractEditInstructionFromToolCall(toolCallMessage) {
+  const functionCalls = toolCallMessage?.toolCall?.functionCalls;
+  if (!Array.isArray(functionCalls) || functionCalls.length === 0) {
+    return null;
+  }
+
+  const functionCall = functionCalls[0];
+  const name = normalizeWhitespace(functionCall?.name || "");
+  if (!name) return null;
+  if (name !== "edit_photo" && name !== "edit_image") return null;
+
+  const args = parseFunctionCallArgs(functionCall?.args);
+  const instruction = normalizeWhitespace(
+    args.editPrompt || args.instruction || args.prompt || args.query || ""
+  );
+  if (!instruction) return null;
+
+  return {
+    functionCallId: functionCall?.id || null,
+    functionName: name,
+    instruction,
+  };
+}
+
 function setupLiveProxy(server) {
   const wss = new WebSocketServer({ server, path: LIVE_PROXY_PATH });
 
@@ -949,6 +1031,9 @@ function setupLiveProxy(server) {
     let geminiConnected = false;
     let heartbeatTimer = null;
     const lastPartialTranscriptByRole = { user: "", ai: "" };
+    let pendingEditRequest = null;
+    let editInProgress = false;
+    let editVersionCounter = 0;
     const queue = [];
 
     const stopHeartbeat = () => {
@@ -984,6 +1069,109 @@ function setupLiveProxy(server) {
       }
     };
 
+    const sendToolResponseToGemini = (functionCallId, responsePayload) => {
+      if (!functionCallId) return;
+      if (!geminiWs || geminiWs.readyState !== WebSocket.OPEN) return;
+      try {
+        geminiWs.send(
+          JSON.stringify({
+            toolResponse: {
+              functionResponses: [
+                {
+                  id: functionCallId,
+                  response: responsePayload,
+                },
+              ],
+            },
+          })
+        );
+      } catch (error) {
+        console.error(`[ws:${clientId}] failed to send tool response`, error?.message);
+      }
+    };
+
+    const handleConfirmEdit = async (confirmPayload) => {
+      if (!pendingEditRequest) {
+        safeSendJson(clientWs, {
+          type: "EDIT_FAILED",
+          error: "No pending edit request.",
+        });
+        return;
+      }
+
+      if (editInProgress) {
+        return;
+      }
+
+      const imageBase64 = normalizeWhitespace(confirmPayload?.imageBase64 || "");
+      const mimeType = normalizeWhitespace(confirmPayload?.mimeType || "") || "image/jpeg";
+      const instruction =
+        normalizeWhitespace(confirmPayload?.instruction || "") ||
+        pendingEditRequest.instruction;
+
+      if (!imageBase64 || !instruction) {
+        safeSendJson(clientWs, {
+          type: "EDIT_FAILED",
+          error: "Missing image data or edit instruction.",
+        });
+        sendToolResponseToGemini(pendingEditRequest.functionCallId, {
+          success: false,
+          error: "Missing image data or edit instruction.",
+        });
+        pendingEditRequest = null;
+        return;
+      }
+
+      editInProgress = true;
+      safeSendJson(clientWs, {
+        type: "EDIT_STATUS",
+        status: "editing",
+        instruction,
+      });
+
+      try {
+        const edited = await runImageEdit({
+          imageBase64,
+          mimeType,
+          editPrompt: instruction,
+        });
+        editVersionCounter += 1;
+        const versionLabel = `v${editVersionCounter}`;
+
+        safeSendJson(clientWs, {
+          type: "EDIT_COMPLETED",
+          instruction,
+          version: versionLabel,
+          versionNumber: editVersionCounter,
+          imageBase64: edited.imageBase64,
+          mimeType: edited.mimeType,
+        });
+
+        sendToolResponseToGemini(pendingEditRequest.functionCallId, {
+          success: true,
+          version: versionLabel,
+          versionNumber: editVersionCounter,
+          message: `Created version ${versionLabel}`,
+          instruction,
+        });
+      } catch (error) {
+        const message = error?.message || "Image edit failed";
+        safeSendJson(clientWs, {
+          type: "EDIT_FAILED",
+          instruction,
+          error: message,
+        });
+        sendToolResponseToGemini(pendingEditRequest.functionCallId, {
+          success: false,
+          instruction,
+          error: message,
+        });
+      } finally {
+        pendingEditRequest = null;
+        editInProgress = false;
+      }
+    };
+
     let upstreamUrl;
     try {
       upstreamUrl = `${GEMINI_WS_URL}?key=${encodeURIComponent(getGeminiApiKey())}`;
@@ -1008,9 +1196,34 @@ function setupLiveProxy(server) {
 
     geminiWs.on("message", (data) => {
       if (clientWs.readyState !== WebSocket.OPEN) return;
-      clientWs.send(data);
+
+      let parsed = null;
       try {
-        const parsed = JSON.parse(data.toString());
+        parsed = JSON.parse(data.toString());
+      } catch {
+        // Binary/audio payloads may not be JSON.
+      }
+
+      if (parsed) {
+        const editToolIntent = extractEditInstructionFromToolCall(parsed);
+        if (editToolIntent) {
+          pendingEditRequest = editToolIntent;
+          safeSendJson(clientWs, {
+            type: "REQUIRE_EDIT_CONFIRM",
+            instruction: editToolIntent.instruction,
+            functionCallId: editToolIntent.functionCallId,
+            functionName: editToolIntent.functionName,
+          });
+          return;
+        }
+      }
+
+      clientWs.send(data);
+
+      try {
+        if (!parsed) {
+          parsed = JSON.parse(data.toString());
+        }
         const transcriptEvents = extractTranscriptEvents(parsed);
         for (const event of transcriptEvents) {
           if (!event.isFinal && lastPartialTranscriptByRole[event.role] === event.text) {
@@ -1055,6 +1268,18 @@ function setupLiveProxy(server) {
       let outbound = data;
       try {
         const parsed = JSON.parse(data.toString());
+
+        if (parsed?.type === "CONFIRM_EDIT") {
+          void handleConfirmEdit(parsed);
+          return;
+        }
+
+        if (parsed?.type === "CANCEL_EDIT_CONFIRM") {
+          pendingEditRequest = null;
+          safeSendJson(clientWs, { type: "EDIT_CONFIRM_CANCELLED" });
+          return;
+        }
+
         const patched = withLiveTranscriptionEnabled(parsed);
         outbound = JSON.stringify(patched);
       } catch {
