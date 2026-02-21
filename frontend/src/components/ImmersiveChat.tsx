@@ -58,6 +58,7 @@ export default function ImmersiveChat({
   const [pendingAssistantTranscript, setPendingAssistantTranscript] = useState("");
   const [isPaused, setIsPaused] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
   const [pendingEditPrompt, setPendingEditPrompt] = useState<string | null>(null);
   const [showEditConfirm, setShowEditConfirm] = useState(false);
   const [queuedEditConfirm, setQueuedEditConfirm] = useState(false);
@@ -800,6 +801,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setIsProcessingImage(true);
     let processedFile: Blob = file;
     let mimeType = file.type;
 
@@ -821,6 +823,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         mimeType = "image/jpeg";
       } catch (err) {
         console.error("HEIC conversion failed:", err);
+        setIsProcessingImage(false);
         alert("Failed to convert HEIC. Please try JPEG or PNG.");
         return;
       }
@@ -879,6 +882,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         startLiveSession(dataUrl, resolvedMimeType);
       } catch (err) {
         console.error("Failed to create conversation:", err);
+      } finally {
+        setIsProcessingImage(false);
       }
     };
     reader.readAsDataURL(processedFile);
@@ -955,10 +960,13 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
           console.error("Failed to summarize:", err);
         }
       }
-
-      onBack();
+    } catch (err) {
+      console.error("End session error:", err);
     } finally {
-      setIsSaving(false);
+      setTimeout(() => {
+        onBack();
+        setIsSaving(false);
+      }, 800);
     }
   };
 
@@ -1270,7 +1278,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       {/* Welcome back overlay */}
       {showWelcomeBack && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full text-center shadow-xl">
+          <div className="bg-white/40 backdrop-blur-2xl border border-white/50 rounded-[2rem] shadow-xl p-6 max-w-sm w-full text-center">
             <h2 className="text-xl font-semibold text-[#1d1d1f] mb-2 mt-2">
               Welcome back!
             </h2>
@@ -1304,7 +1312,21 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
               <span />
               <span />
             </div>
-            <span className="text-lg font-medium text-[#1d1d1f]">Editing</span>
+            <span className="text-lg font-medium text-white">Editing</span>
+          </div>
+        </div>
+      )}
+
+      {/* Processing Upload overlay */}
+      {isProcessingImage && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white/40 backdrop-blur-2xl px-8 py-5 rounded-[2rem] flex items-center gap-4 shadow-[0_8px_32px_rgba(0,0,0,0.12)] border border-white/50">
+            <div className="preparing-dots scale-125" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+            <span className="text-lg font-medium text-white">Preparing...</span>
           </div>
         </div>
       )}
@@ -1318,7 +1340,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
               <span />
               <span />
             </div>
-            <span className="text-lg font-medium text-[#1d1d1f]">Saving</span>
+            <span className="text-lg font-medium text-white">Saving</span>
           </div>
         </div>
       )}

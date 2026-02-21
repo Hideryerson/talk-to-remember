@@ -305,7 +305,7 @@ export default function ConversationList({ onSelect, onNew, greetingName }: Prop
                         <span className="ml-1">· {c.messageCount} msgs</span>
                       )}
                       {c.versionCount > 1 && (
-                        <span className="ml-1">· {c.versionCount} edits</span>
+                        <span className="ml-1">· {c.versionCount - 1} edits</span>
                       )}
                     </p>
                   </div>

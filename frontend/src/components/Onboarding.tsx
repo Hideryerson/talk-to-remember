@@ -179,9 +179,9 @@ export default function Onboarding({ onComplete, onBackToAuth }: OnboardingProps
   return (
     <div className="h-[100dvh] bg-[#f7f7f8] flex flex-col overflow-hidden">
       {/* Sticky Header */}
-      <div className="w-full px-6 pt-12 pb-4 bg-[#f7f7f8] z-10 shrink-0">
+      <div className="w-full px-4 pt-4 pb-4 bg-white/90 backdrop-blur-md border-b border-gray-200 z-10 shrink-0 sticky top-0">
         <div className="max-w-md mx-auto">
-          <h1 className="text-2xl font-semibold text-[#1d1d1f] tracking-tight text-center">Getting to know you</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-[#1d1d1f] text-center">Getting to know you</h1>
           <p className="text-sm text-[#86868b] mt-2 text-center">
             Step {stepIndex + 1} of {STEPS.length}
           </p>
@@ -196,7 +196,7 @@ export default function Onboarding({ onComplete, onBackToAuth }: OnboardingProps
 
       {/* Scrollable Chat Area */}
       <div className="flex-1 overflow-y-auto px-6 py-2 flex flex-col w-full max-w-md mx-auto">
-        <div className="flex flex-col gap-6 pb-8 h-full justify-end">
+        <div className="flex flex-col justify-center gap-6 pb-8 min-h-full">
           {/* System Question Bubble */}
           <div className="bg-[#007aff] text-white px-5 py-3.5 rounded-2xl rounded-tl-[4px] self-start max-w-[85%] shadow-sm">
             <p className="text-[15px] leading-relaxed">
@@ -242,7 +242,7 @@ export default function Onboarding({ onComplete, onBackToAuth }: OnboardingProps
       </div>
 
       {/* Sticky Footer */}
-      <div className="w-full px-6 py-6 bg-[#f7f7f8] shrink-0 safe-bottom">
+      <div className="w-full px-6 py-4 bg-white/90 backdrop-blur-md border-t border-gray-200 z-10 shrink-0 sticky bottom-0 safe-bottom">
         <div className="max-w-md mx-auto flex gap-3">
           <button
             type="button"
