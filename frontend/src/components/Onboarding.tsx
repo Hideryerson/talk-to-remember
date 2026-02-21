@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { getToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 import { loadVoices, speakText } from "@/lib/voices";
@@ -171,11 +172,14 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f7f8] flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white rounded-3xl border border-gray-200 shadow-sm p-6">
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold text-[#1d1d1f]">Getting to know you</h1>
-          <p className="text-sm text-[#86868b] mt-1">
+    <div className="min-h-screen bg-[#f7f7f8] flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-md">
+        <div className="flex justify-center mb-8">
+          <Image src="/logo-dark.png" alt="Recall" width={56} height={56} priority />
+        </div>
+        <div className="mb-8">
+          <h1 className="text-2xl font-semibold text-[#1d1d1f] tracking-tight text-center">Getting to know you</h1>
+          <p className="text-sm text-[#86868b] mt-2 text-center">
             Step {stepIndex + 1} of {STEPS.length}
           </p>
           <div className="mt-3 h-1.5 w-full rounded-full bg-[#ececf0] overflow-hidden">
@@ -186,8 +190,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           </div>
         </div>
 
-        <div className="bg-[#f7f7f8] border border-gray-200 rounded-2xl p-4 mb-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-[#86868b]">
+        <div className="bg-white border border-gray-100 shadow-sm rounded-3xl p-5 mb-6">
+          <p className="text-xs font-semibold uppercase tracking-wider text-[#007aff] mb-1">
             {currentStep.title}
           </p>
           <p className="text-[15px] leading-relaxed text-[#1d1d1f] mt-1">
@@ -200,7 +204,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
             value={currentValue}
             onChange={(e) => updateCurrentValue(e.target.value)}
             placeholder={currentStep.placeholder}
-            className="w-full min-h-[120px] bg-[#f7f7f8] border border-gray-200 rounded-2xl px-4 py-3 text-[#1d1d1f] placeholder-[#86868b] outline-none focus:border-[#007aff] focus:ring-2 focus:ring-[#007aff]/20 resize-none"
+            className="w-full min-h-[140px] bg-white border border-gray-200 rounded-2xl px-5 py-4 text-[#1d1d1f] placeholder-[#86868b] outline-none focus:border-[#007aff] shadow-sm focus:ring-4 focus:ring-[#007aff]/10 transition-all resize-none"
             disabled={saving}
             autoFocus
           />
@@ -215,7 +219,7 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
               }
             }}
             placeholder={currentStep.placeholder}
-            className="w-full bg-[#f7f7f8] border border-gray-200 rounded-2xl px-4 py-3 text-[#1d1d1f] placeholder-[#86868b] outline-none focus:border-[#007aff] focus:ring-2 focus:ring-[#007aff]/20"
+            className="w-full bg-white border border-gray-200 rounded-2xl px-5 py-4 text-[#1d1d1f] placeholder-[#86868b] outline-none focus:border-[#007aff] shadow-sm focus:ring-4 focus:ring-[#007aff]/10 transition-all"
             disabled={saving}
             autoFocus
           />

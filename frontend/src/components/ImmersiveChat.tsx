@@ -1271,10 +1271,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       {showWelcomeBack && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
           <div className="bg-white rounded-3xl p-6 max-w-sm w-full text-center shadow-xl">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-blue-100 flex items-center justify-center text-[#007aff]">
-              <RotateCcw size={24} strokeWidth={2.2} />
-            </div>
-            <h2 className="text-xl font-semibold text-[#1d1d1f] mb-2">
+            <h2 className="text-xl font-semibold text-[#1d1d1f] mb-2 mt-2">
               Welcome back!
             </h2>
             <p className="text-[#86868b] mb-6">
@@ -1283,13 +1280,13 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
             <div className="space-y-3">
               <button
                 onClick={handleContinueConversation}
-                className="w-full py-3 bg-[#007aff] text-white font-semibold rounded-xl active:scale-[0.98] transition-transform"
+                className="w-full py-3 bg-[#007aff] border border-[#0066d6] text-white font-semibold rounded-xl active:scale-[0.98] transition-transform shadow-sm"
               >
                 Continue Conversation
               </button>
               <button
                 onClick={handleBackFromWelcome}
-                className="w-full py-3 text-[#86868b] font-medium active:bg-gray-100 rounded-xl transition-colors"
+                className="w-full py-3 bg-white text-[#86868b] border border-gray-200 font-medium active:bg-gray-50 rounded-xl transition-colors shadow-sm"
               >
                 Back
               </button>

@@ -162,7 +162,7 @@ export default function VersionGallery({
                 onDoubleClick={() => handleThumbnailDoubleClick(index)}
                 type="button"
                 className={`relative shrink-0 w-20 h-20 rounded-xl overflow-hidden border-2 transition-all ${index === selectedIndex
-                  ? "border-[#007aff] shadow-md"
+                  ? "border-transparent shadow-md"
                   : "border-transparent"
                   }`}
               >

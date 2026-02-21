@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { setToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 
@@ -84,9 +85,9 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
 
   return (
     <div className="min-h-screen bg-[#f7f7f8] flex items-center justify-center p-4">
-      <div className="w-full max-w-sm bg-white rounded-3xl border border-gray-200 shadow-sm p-6">
-        <div className="text-center mb-6">
-          <h1 className="text-2xl font-semibold tracking-tight text-[#1d1d1f]">RE</h1>
+      <div className="w-full max-w-sm bg-white rounded-3xl border border-gray-200 shadow-sm p-6 pt-8">
+        <div className="text-center mb-6 flex flex-col items-center">
+          <Image src="/logo-dark.png" alt="Recall" width={56} height={56} className="mb-2" priority />
           <p className="text-sm text-[#86868b] mt-1">Recall the moment. Relive the story.</p>
         </div>
 
@@ -145,16 +146,18 @@ export default function AuthForm({ onSuccess }: AuthFormProps) {
           </button>
         )}
 
-        <button
-          onClick={() => {
-            setIsLogin((prev) => !prev);
-            setError("");
-            setSuggestRegister(false);
-          }}
-          className="w-full text-center mt-4 text-[#86868b] text-sm hover:text-[#1d1d1f]"
-        >
-          {isLogin ? "Don't have an account? Register" : "Already registered? Log in"}
-        </button>
+        {(!isLogin || !suggestRegister) && (
+          <button
+            onClick={() => {
+              setIsLogin((prev) => !prev);
+              setError("");
+              setSuggestRegister(false);
+            }}
+            className="w-full text-center mt-4 text-[#86868b] text-sm hover:text-[#1d1d1f]"
+          >
+            {isLogin ? "Don't have an account? Register" : "Already registered? Log in"}
+          </button>
+        )}
       </div>
     </div>
   );
