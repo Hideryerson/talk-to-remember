@@ -61,6 +61,7 @@ export default function ImmersiveChat({
   const [isSaving, setIsSaving] = useState(false);
   const [pendingEditPrompt, setPendingEditPrompt] = useState<string | null>(null);
   const [showEditConfirm, setShowEditConfirm] = useState(false);
+  const [queuedEditConfirm, setQueuedEditConfirm] = useState(false);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -320,7 +321,14 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       if (!prev) return cleanedChunk;
       if (cleanedChunk.startsWith(prev)) return cleanedChunk;
       if (prev.endsWith(cleanedChunk)) return prev;
-      return `${prev}${cleanedChunk.startsWith("'") || cleanedChunk.startsWith(",") || cleanedChunk.startsWith(".") ? "" : " "}${cleanedChunk}`.trim();
+
+      // Check if previous character or the new character's first character is CJK
+      const isPrevCJK = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(prev.slice(-1));
+      const isNextCJK = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(cleanedChunk.charAt(0));
+      const isPunctuation = cleanedChunk.startsWith("'") || cleanedChunk.startsWith(",") || cleanedChunk.startsWith(".");
+
+      const space = (isPrevCJK || isNextCJK || isPunctuation) ? "" : " ";
+      return `${prev}${space}${cleanedChunk}`.trim();
     };
 
     const flushPendingUserTranscript = () => {
@@ -441,7 +449,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
           pendingUserTranscriptRef.current,
           normalized
         );
-        scheduleUserTranscriptFlush(isFinal ? 220 : 900);
+        scheduleUserTranscriptFlush(isFinal ? 220 : 2500);
       },
       onTranscriptEntry: (entry) => {
         appendTranscriptEntry(entry);
@@ -452,7 +460,10 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
           if (!instruction) return;
           setPendingEditPrompt(instruction);
           pendingEditPromptRef.current = instruction;
-          setShowEditConfirm(true);
+
+          // Instead of showing immediately, queue it to show when playback completes
+          setQueuedEditConfirm(true);
+
           setIsEditing(false);
           isEditingRef.current = false;
           if (!isPausedRef.current) {
@@ -552,6 +563,15 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
           setAwaitingFirstAssistantTurn(false);
           awaitingFirstAssistantTurnRef.current = false;
         }
+
+        // Check if we have a queued edit confirmation to show now
+        setQueuedEditConfirm((prev) => {
+          if (prev) {
+            setShowEditConfirm(true);
+          }
+          return false;
+        });
+
         setSessionState((prev) => (prev === "editing" ? prev : "listening"));
       },
       onTurnComplete: () => {
@@ -811,10 +831,10 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
             Authorization: `Bearer ${getToken()}`,
           },
           body: JSON.stringify({
-              imageDataUrl: dataUrl,
-              imageMimeType: resolvedMimeType,
-            }),
-          });
+            imageDataUrl: dataUrl,
+            imageMimeType: resolvedMimeType,
+          }),
+        });
         const data = await res.json();
         setConvoId(data.id);
         convoIdRef.current = data.id;
@@ -1226,6 +1246,16 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
           <div className="bg-white/95 backdrop-blur-md px-6 py-4 rounded-2xl flex items-center gap-3 shadow-lg">
             <div className="w-6 h-6 border-2 border-[#007aff] border-t-transparent rounded-full animate-spin" />
             <span className="text-lg text-[#1d1d1f]">Editing photo...</span>
+          </div>
+        </div>
+      )}
+
+      {/* Saving Session overlay */}
+      {isSaving && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white/95 backdrop-blur-md px-6 py-4 rounded-2xl flex items-center gap-3 shadow-lg">
+            <div className="w-6 h-6 border-2 border-[#007aff] border-t-transparent rounded-full animate-spin" />
+            <span className="text-lg text-[#1d1d1f]">Saving session...</span>
           </div>
         </div>
       )}

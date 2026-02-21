@@ -91,7 +91,7 @@ export default function FloatingTranscript({
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="transcript-bubble p-2 h-[150px] overflow-y-auto no-scrollbar ios-transition touch-pan-y pointer-events-auto"
+        className="transcript-bubble p-2 max-h-[150px] overflow-y-auto overscroll-contain no-scrollbar ios-transition touch-pan-y pointer-events-auto"
       >
         <div className="space-y-3 pb-3">
           {renderMessages.map((msg, i) => (
@@ -100,11 +100,10 @@ export default function FloatingTranscript({
               className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[85%] px-4 py-2.5 text-sm leading-relaxed ${
-                  msg.role === "user"
+                className={`max-w-[85%] px-4 py-2.5 text-sm leading-relaxed ${msg.role === "user"
                     ? "message-user"
                     : "message-model"
-                }`}
+                  }`}
               >
                 {msg.text.replace(/\[EDIT_SUGGESTION:.*?\]/g, "").trim()}
                 {msg.role === "model" && currentlySpeaking === msg.text && (
