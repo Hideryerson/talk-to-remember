@@ -23,7 +23,7 @@ export default function FloatingTranscript({
   pendingAssistantText = "",
 }: FloatingTranscriptProps) {
   const wrapperClass =
-    "fixed bottom-[13.5rem] left-1/2 -translate-x-1/2 w-[82vw] max-w-[560px] z-30 safe-bottom pointer-events-none";
+    "fixed bottom-[10rem] left-1/2 -translate-x-1/2 w-[70vw] max-w-[400px] z-30 safe-bottom pointer-events-none";
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const normalizedPending = pendingAssistantText.replace(/\s+/g, " ").trim();
@@ -73,20 +73,22 @@ export default function FloatingTranscript({
     );
   }
 
-  const renderMessages = [...messages];
+  let renderMessages = [...messages];
   if (normalizedPending) {
     const last = renderMessages[renderMessages.length - 1];
     if (!(last && last.role === "model" && last.text.replace(/\s+/g, " ").trim() === normalizedPending)) {
       renderMessages.push({ role: "model", text: normalizedPending });
     }
   }
+  // Only show last 2 messages to avoid overlap with control bar
+  renderMessages = renderMessages.slice(-2);
 
   return (
     <div className={wrapperClass}>
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="transcript-bubble p-2 max-h-[210px] overflow-y-auto no-scrollbar ios-transition touch-pan-y pointer-events-auto"
+        className="transcript-bubble p-2 max-h-[120px] overflow-y-auto no-scrollbar ios-transition touch-pan-y pointer-events-auto"
       >
         <div className="space-y-3 pb-3">
           {renderMessages.map((msg, i) => (

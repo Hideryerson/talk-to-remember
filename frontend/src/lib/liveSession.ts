@@ -675,7 +675,9 @@ export class LiveSession {
       this.minSpeechRms,
       this.ambientNoiseFloorRms * this.speechThresholdMultiplier
     );
-    const effectiveThreshold = this.isPlaying ? dynamicThreshold * 1.35 : dynamicThreshold;
+    // When AI is playing audio, require much louder speech to prevent echo
+    // 3.0x threshold should suppress most echo while still allowing barge-in
+    const effectiveThreshold = this.isPlaying ? dynamicThreshold * 3.0 : dynamicThreshold;
     const isSpeech = rms >= effectiveThreshold;
 
     if (isSpeech) {

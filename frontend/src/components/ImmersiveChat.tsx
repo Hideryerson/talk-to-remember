@@ -997,7 +997,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     if (!currentSession) return;
 
     if (success) {
-      const versionNumber = Math.max(1, imageVersionsRef.current.length - 1);
+      // Version number is the total count (v2 means second version)
+      const versionNumber = imageVersionsRef.current.length;
       const activeVersion = imageVersionsRef.current[currentImageIndexRef.current];
       if (activeVersion?.dataUrl?.includes(",")) {
         const base64 = activeVersion.dataUrl.split(",")[1];
@@ -1013,7 +1014,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       }
       clearPendingEditConfirmation();
       lastAutoEditPromptRef.current = "";
-      setSessionState("connecting");
+      // Keep editing state - will transition to speaking when AI audio arrives
     } else {
       setPendingEditPrompt(editPrompt);
       pendingEditPromptRef.current = editPrompt;
@@ -1193,6 +1194,15 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
           <div className="bg-white/90 backdrop-blur-sm px-4 py-2.5 rounded-full flex items-center gap-2.5 shadow-lg border border-black/5">
             <div className="w-2.5 h-2.5 bg-[#ff9f0a] rounded-full" />
             <span className="text-sm font-medium text-[#ff9f0a]">Paused</span>
+          </div>
+        </div>
+      )}
+
+      {sessionState === "editing" && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40">
+          <div className="bg-white/90 backdrop-blur-sm px-4 py-2.5 rounded-full flex items-center gap-2.5 shadow-lg border border-black/5">
+            <div className="w-5 h-5 border-2 border-[#007aff] border-t-transparent rounded-full animate-spin" />
+            <span className="text-sm font-medium text-[#007aff]">Editing</span>
           </div>
         </div>
       )}
