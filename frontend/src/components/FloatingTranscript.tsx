@@ -22,6 +22,8 @@ export default function FloatingTranscript({
   isPreparing = false,
   pendingAssistantText = "",
 }: FloatingTranscriptProps) {
+  const wrapperClass =
+    "fixed bottom-[13.5rem] left-1/2 -translate-x-1/2 w-[82vw] max-w-[560px] z-30 safe-bottom pointer-events-none";
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const normalizedPending = pendingAssistantText.replace(/\s+/g, " ").trim();
@@ -46,8 +48,8 @@ export default function FloatingTranscript({
 
   if (messages.length === 0) {
     return (
-      <div className="fixed bottom-44 left-4 right-4 z-30 safe-bottom transcript-section">
-        <div className="transcript-bubble px-4 py-3">
+      <div className={wrapperClass}>
+        <div className="transcript-bubble px-4 py-3 pointer-events-auto">
           {normalizedPending ? (
             <div className="flex justify-start">
               <div className="max-w-[85%] px-4 py-2.5 text-sm leading-relaxed message-model">
@@ -80,11 +82,11 @@ export default function FloatingTranscript({
   }
 
   return (
-    <div className="fixed bottom-44 left-4 right-4 z-30 safe-bottom transcript-section">
+    <div className={wrapperClass}>
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="transcript-bubble p-2 max-h-[48vh] overflow-y-auto no-scrollbar ios-transition touch-pan-y"
+        className="transcript-bubble p-2 max-h-[210px] overflow-y-auto no-scrollbar ios-transition touch-pan-y pointer-events-auto"
       >
         <div className="space-y-3 pb-3">
           {renderMessages.map((msg, i) => (

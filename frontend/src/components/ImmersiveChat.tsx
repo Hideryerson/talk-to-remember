@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { getToken } from "@/lib/auth";
 import { apiUrl, getBackendWsUrl } from "@/lib/api";
-import { Camera, ChevronLeft, RotateCcw, X } from "lucide-react";
+import { Camera, Check, ChevronLeft, RotateCcw, Sparkles, X } from "lucide-react";
 import {
   LiveSession,
   DEFAULT_SYSTEM_INSTRUCTION,
@@ -56,6 +56,8 @@ export default function ImmersiveChat({
   const [listeningLevel, setListeningLevel] = useState(0);
   const [pendingAssistantTranscript, setPendingAssistantTranscript] = useState("");
   const [isPaused, setIsPaused] = useState(false);
+  const [pendingEditPrompt, setPendingEditPrompt] = useState<string | null>(null);
+  const [showEditConfirm, setShowEditConfirm] = useState(false);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -74,6 +76,9 @@ export default function ImmersiveChat({
   const lastFinalUserTranscriptRef = useRef("");
   const lastAutoEditPromptRef = useRef("");
   const isPausedRef = useRef(false);
+  const pendingEditPromptRef = useRef<string | null>(null);
+  const revealEditConfirmAfterAssistantRef = useRef(false);
+  const assistantRespondedForPendingEditRef = useRef(false);
 
   // Keep refs in sync
   useEffect(() => {
@@ -86,7 +91,8 @@ export default function ImmersiveChat({
     awaitingFirstAssistantTurnRef.current = awaitingFirstAssistantTurn;
     pendingAssistantTranscriptRef.current = pendingAssistantTranscript;
     isPausedRef.current = isPaused;
-  }, [messages, imageVersions, convoId, currentImageIndex, isEditing, imageMimeType, awaitingFirstAssistantTurn, pendingAssistantTranscript, isPaused]);
+    pendingEditPromptRef.current = pendingEditPrompt;
+  }, [messages, imageVersions, convoId, currentImageIndex, isEditing, imageMimeType, awaitingFirstAssistantTurn, pendingAssistantTranscript, isPaused, pendingEditPrompt]);
 
   const appendTranscriptEntry = useCallback((entry: LiveTranscriptEntry) => {
     if (!entry.isFinal) return;
@@ -108,6 +114,14 @@ export default function ImmersiveChat({
       userTranscriptCommitTimerRef.current = null;
     }
   };
+
+  const clearPendingEditConfirmation = useCallback(() => {
+    setShowEditConfirm(false);
+    setPendingEditPrompt(null);
+    pendingEditPromptRef.current = null;
+    revealEditConfirmAfterAssistantRef.current = false;
+    assistantRespondedForPendingEditRef.current = false;
+  }, []);
 
   // Decay mic level so listening waveform reflects real input and settles smoothly.
   useEffect(() => {
@@ -146,11 +160,12 @@ export default function ImmersiveChat({
     return () => {
       clearUserTranscriptCommitTimer();
       pendingUserTranscriptRef.current = "";
+      clearPendingEditConfirmation();
       if (liveSessionRef.current) {
         liveSessionRef.current.disconnect();
       }
     };
-  }, [conversationId]);
+  }, [clearPendingEditConfirmation, conversationId]);
 
   // Check if this is a continuation (only for existing conversations, not new uploads)
   useEffect(() => {
@@ -251,6 +266,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     setSessionState("connecting");
     setIsPaused(false);
     isPausedRef.current = false;
+    clearPendingEditConfirmation();
+    lastAutoEditPromptRef.current = "";
     setShowWelcomeBack(false);
     setLiveError(null);
     setListeningLevel(0);
@@ -262,7 +279,6 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     clearUserTranscriptCommitTimer();
     pendingUserTranscriptRef.current = "";
     lastFinalUserTranscriptRef.current = "";
-    lastAutoEditPromptRef.current = "";
 
     const commitAssistantMessage = (text: string) => {
       const normalized = text.replace(/\s+/g, " ").trim();
@@ -320,41 +336,29 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       return prompt;
     };
 
-    const tryAutoEditFromUserSpeech = (normalized: string) => {
+    const queueEditConfirmation = (normalized: string) => {
       const editPrompt = extractEditPrompt(normalized);
       if (!editPrompt || isEditingRef.current) return;
-      if (lastAutoEditPromptRef.current === editPrompt) return;
-      lastAutoEditPromptRef.current = editPrompt;
-
-      void (async () => {
-        const activeSession = liveSessionRef.current;
-        activeSession?.interrupt();
-        const success = await handleEditImage(editPrompt);
-        const currentSession = liveSessionRef.current;
-        if (!currentSession) return;
-
-        if (success) {
-          const currentVersion = imageVersionsRef.current[currentImageIndexRef.current];
-          const currentDataUrl = currentVersion?.dataUrl;
-          if (currentDataUrl && currentDataUrl.includes(",")) {
-            const base64 = currentDataUrl.split(",")[1];
-            currentSession.sendImage(
-              base64,
-              imageMimeTypeRef.current,
-              `The photo is now edited based on this request: "${editPrompt}". Briefly acknowledge and continue the conversation.`
-            );
-          } else {
-            currentSession.sendText(
-              `The photo was edited as requested: "${editPrompt}". Briefly acknowledge and continue the conversation.`
-            );
-          }
-          return;
-        }
-
-        currentSession.sendText(
-          `The photo edit failed for this request: "${editPrompt}". Apologize briefly and ask the user to try a different edit request.`
-        );
-      })();
+      const trimmedPrompt = editPrompt.replace(/\s+/g, " ").trim();
+      if (!trimmedPrompt) return;
+      if (
+        pendingEditPromptRef.current === trimmedPrompt &&
+        revealEditConfirmAfterAssistantRef.current
+      ) {
+        return;
+      }
+      if (
+        lastAutoEditPromptRef.current === trimmedPrompt &&
+        pendingEditPromptRef.current === trimmedPrompt
+      ) {
+        return;
+      }
+      lastAutoEditPromptRef.current = trimmedPrompt;
+      setPendingEditPrompt(trimmedPrompt);
+      pendingEditPromptRef.current = trimmedPrompt;
+      setShowEditConfirm(false);
+      revealEditConfirmAfterAssistantRef.current = true;
+      assistantRespondedForPendingEditRef.current = false;
     };
 
     const flushPendingUserTranscript = () => {
@@ -365,7 +369,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       if (lastFinalUserTranscriptRef.current === normalized) return;
       lastFinalUserTranscriptRef.current = normalized;
       commitUserMessage(normalized);
-      tryAutoEditFromUserSpeech(normalized);
+      queueEditConfirmation(normalized);
     };
 
     const scheduleUserTranscriptFlush = (delayMs: number) => {
@@ -408,6 +412,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       onDisconnected: () => {
         log("Live session disconnected");
         clearUserTranscriptCommitTimer();
+        clearPendingEditConfirmation();
+        lastAutoEditPromptRef.current = "";
         setListeningLevel(0);
         setCurrentlySpeaking(null);
         setIsPaused(false);
@@ -419,11 +425,13 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         assistantAudioInCurrentTurnRef.current = false;
         pendingAssistantTranscriptRef.current = "";
         lastFinalUserTranscriptRef.current = "";
-        lastAutoEditPromptRef.current = "";
         setSessionState("idle");
       },
       onTextReceived: (text, isFinal) => {
         log("Text received:", text, "final:", isFinal);
+        if (revealEditConfirmAfterAssistantRef.current && text.trim()) {
+          assistantRespondedForPendingEditRef.current = true;
+        }
         const merged = mergeTranscriptChunk(pendingAssistantTranscriptRef.current, text);
         pendingAssistantTranscriptRef.current = merged;
         setPendingAssistantTranscript(merged);
@@ -439,6 +447,9 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       },
       onAudioReceived: () => {
         if (isPausedRef.current) return;
+        if (revealEditConfirmAfterAssistantRef.current) {
+          assistantRespondedForPendingEditRef.current = true;
+        }
         flushPendingUserTranscript();
         assistantAudioInCurrentTurnRef.current = true;
         setListeningLevel(0);
@@ -463,6 +474,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       onError: (error) => {
         log("Live session error:", error);
         clearUserTranscriptCommitTimer();
+        clearPendingEditConfirmation();
+        lastAutoEditPromptRef.current = "";
         setLiveError(error);
         setListeningLevel(0);
         setCurrentlySpeaking(null);
@@ -475,11 +488,13 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         assistantAudioInCurrentTurnRef.current = false;
         pendingAssistantTranscriptRef.current = "";
         lastFinalUserTranscriptRef.current = "";
-        lastAutoEditPromptRef.current = "";
         setSessionState("idle");
       },
       onInterrupted: () => {
         log("Response interrupted");
+        if (revealEditConfirmAfterAssistantRef.current) {
+          assistantRespondedForPendingEditRef.current = true;
+        }
         setCurrentlySpeaking(null);
         setAwaitingFirstAssistantTurn(false);
         setPendingAssistantTranscript("");
@@ -512,6 +527,15 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
           pendingAssistantTranscriptRef.current = "";
         }
         flushPendingUserTranscript();
+        if (
+          revealEditConfirmAfterAssistantRef.current &&
+          assistantRespondedForPendingEditRef.current &&
+          pendingEditPromptRef.current
+        ) {
+          revealEditConfirmAfterAssistantRef.current = false;
+          assistantRespondedForPendingEditRef.current = false;
+          setShowEditConfirm(true);
+        }
         if (isPausedRef.current) {
           assistantAudioInCurrentTurnRef.current = false;
           setSessionState("paused");
@@ -565,6 +589,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         setLiveError("Failed to connect to Gemini Live. Please retry.");
       }
       clearUserTranscriptCommitTimer();
+      clearPendingEditConfirmation();
+      lastAutoEditPromptRef.current = "";
       setListeningLevel(0);
       setIsPaused(false);
       isPausedRef.current = false;
@@ -575,10 +601,9 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       assistantAudioInCurrentTurnRef.current = false;
       pendingAssistantTranscriptRef.current = "";
       lastFinalUserTranscriptRef.current = "";
-      lastAutoEditPromptRef.current = "";
       setSessionState("idle");
     }
-  }, [appendTranscriptEntry, profile]);
+  }, [appendTranscriptEntry, clearPendingEditConfirmation, profile]);
 
   const hydrateConversation = async (id: string) => {
     try {
@@ -610,6 +635,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         })
         .filter((item: LiveTranscriptEntry | null): item is LiveTranscriptEntry => item !== null);
       setTranscriptEntries(transcriptHistory);
+      clearPendingEditConfirmation();
+      lastAutoEditPromptRef.current = "";
       setPendingAssistantTranscript("");
       pendingAssistantTranscriptRef.current = "";
 
@@ -745,6 +772,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       setIsPaused(false);
       isPausedRef.current = false;
       clearUserTranscriptCommitTimer();
+      clearPendingEditConfirmation();
+      lastAutoEditPromptRef.current = "";
       pendingUserTranscriptRef.current = "";
       messagesRef.current = [];
       setPendingAssistantTranscript("");
@@ -852,13 +881,14 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     } finally {
       setIsEditing(false);
       isEditingRef.current = false;
-      setSessionState("listening");
     }
   };
 
   // End session
   const handleEndSession = async () => {
     clearUserTranscriptCommitTimer();
+    clearPendingEditConfirmation();
+    lastAutoEditPromptRef.current = "";
     pendingUserTranscriptRef.current = "";
     setIsPaused(false);
     isPausedRef.current = false;
@@ -937,6 +967,72 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     setIsPaused(true);
     isPausedRef.current = true;
     setSessionState("paused");
+  };
+
+  const handleConfirmEdit = async () => {
+    const editPrompt = pendingEditPromptRef.current?.trim();
+    const session = liveSessionRef.current;
+    if (!editPrompt || !session) return;
+
+    setShowEditConfirm(false);
+    revealEditConfirmAfterAssistantRef.current = false;
+    assistantRespondedForPendingEditRef.current = false;
+
+    if (isPausedRef.current) {
+      setIsPaused(false);
+      isPausedRef.current = false;
+    }
+
+    clearUserTranscriptCommitTimer();
+    pendingUserTranscriptRef.current = "";
+    session.interrupt();
+    session.stopAudioInput();
+    setCurrentlySpeaking(null);
+    setPendingAssistantTranscript("");
+    pendingAssistantTranscriptRef.current = "";
+    setSessionState("editing");
+
+    const success = await handleEditImage(editPrompt);
+    const currentSession = liveSessionRef.current;
+    if (!currentSession) return;
+
+    if (success) {
+      const versionNumber = Math.max(1, imageVersionsRef.current.length - 1);
+      const activeVersion = imageVersionsRef.current[currentImageIndexRef.current];
+      if (activeVersion?.dataUrl?.includes(",")) {
+        const base64 = activeVersion.dataUrl.split(",")[1];
+        currentSession.sendImage(
+          base64,
+          imageMimeTypeRef.current,
+          `Created version v${versionNumber}. Briefly acknowledge the update and continue the conversation with one short question.`
+        );
+      } else {
+        currentSession.sendText(
+          `Created version v${versionNumber}. Briefly acknowledge the update and continue the conversation with one short question.`
+        );
+      }
+      clearPendingEditConfirmation();
+      lastAutoEditPromptRef.current = "";
+      setSessionState("connecting");
+    } else {
+      setPendingEditPrompt(editPrompt);
+      pendingEditPromptRef.current = editPrompt;
+      setShowEditConfirm(true);
+      currentSession.sendText(
+        `The edit request failed: "${editPrompt}". Apologize briefly and ask the user if they want to try another edit instruction.`
+      );
+      setSessionState("listening");
+    }
+
+    const resumed = await currentSession.startAudioInput();
+    if (!resumed) {
+      setLiveError("Microphone failed to restart after edit. Please tap pause/continue to re-enable.");
+    }
+  };
+
+  const handleCancelEdit = () => {
+    clearPendingEditConfirmation();
+    lastAutoEditPromptRef.current = "";
   };
 
   // Gallery handlers
@@ -1112,6 +1208,35 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
               aria-label="Dismiss error"
             >
               <X size={18} strokeWidth={2.4} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showEditConfirm && pendingEditPrompt && !isEditing && (
+        <div className="fixed bottom-32 left-1/2 -translate-x-1/2 z-50 w-[88vw] max-w-md">
+          <div className="bg-white/92 backdrop-blur-xl border border-black/10 rounded-2xl shadow-xl p-4">
+            <div className="flex items-center gap-2 text-[#007aff] mb-2">
+              <Sparkles size={18} strokeWidth={2.2} />
+              <span className="text-sm font-semibold">Ready to edit</span>
+            </div>
+            <p className="text-sm text-[#1d1d1f] leading-relaxed mb-3">
+              {pendingEditPrompt}
+            </p>
+            <button
+              onClick={() => {
+                void handleConfirmEdit();
+              }}
+              className="w-full h-11 rounded-xl bg-[#007aff] text-white font-semibold flex items-center justify-center gap-2 active:scale-[0.98] transition-transform"
+            >
+              <Check size={18} strokeWidth={2.6} />
+              Confirm Edit
+            </button>
+            <button
+              onClick={handleCancelEdit}
+              className="w-full mt-2 h-10 rounded-xl text-[#86868b] font-medium active:bg-black/5 transition-colors"
+            >
+              Not now
             </button>
           </div>
         </div>
