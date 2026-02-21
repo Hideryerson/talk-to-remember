@@ -966,7 +966,6 @@ function setupLiveProxy(server) {
     let geminiConnected = false;
     let heartbeatTimer = null;
     const lastPartialTranscriptByRole = { user: "", ai: "" };
-    let pendingEditRequest = null;
     let editInProgress = false;
     let editVersionCounter = 0;
     const queue = [];
@@ -1027,14 +1026,6 @@ function setupLiveProxy(server) {
     };
 
     const handleConfirmEdit = async (confirmPayload) => {
-      if (!pendingEditRequest) {
-        safeSendJson(clientWs, {
-          type: "EDIT_FAILED",
-          error: "No pending edit request.",
-        });
-        return;
-      }
-
       if (editInProgress) {
         return;
       }
@@ -1042,19 +1033,13 @@ function setupLiveProxy(server) {
       const imageBase64 = normalizeWhitespace(confirmPayload?.imageBase64 || "");
       const mimeType = normalizeWhitespace(confirmPayload?.mimeType || "") || "image/jpeg";
       const instruction =
-        normalizeWhitespace(confirmPayload?.instruction || "") ||
-        pendingEditRequest.instruction;
+        normalizeWhitespace(confirmPayload?.instruction || "");
 
       if (!imageBase64 || !instruction) {
         safeSendJson(clientWs, {
           type: "EDIT_FAILED",
           error: "Missing image data or edit instruction.",
         });
-        sendToolResponseToGemini(pendingEditRequest.functionCallId, pendingEditRequest.functionName, {
-          success: false,
-          error: "Missing image data or edit instruction.",
-        });
-        pendingEditRequest = null;
         return;
       }
 
@@ -1082,14 +1067,6 @@ function setupLiveProxy(server) {
           imageBase64: edited.imageBase64,
           mimeType: edited.mimeType,
         });
-
-        sendToolResponseToGemini(pendingEditRequest.functionCallId, pendingEditRequest.functionName, {
-          success: true,
-          version: versionLabel,
-          versionNumber: editVersionCounter,
-          message: `Created version ${versionLabel}`,
-          instruction,
-        });
       } catch (error) {
         const message = error?.message || "Image edit failed";
         safeSendJson(clientWs, {
@@ -1097,13 +1074,7 @@ function setupLiveProxy(server) {
           instruction,
           error: message,
         });
-        sendToolResponseToGemini(pendingEditRequest.functionCallId, pendingEditRequest.functionName, {
-          success: false,
-          instruction,
-          error: message,
-        });
       } finally {
-        pendingEditRequest = null;
         editInProgress = false;
       }
     };
@@ -1197,7 +1168,6 @@ function setupLiveProxy(server) {
         }
 
         if (parsed?.type === "CANCEL_EDIT_CONFIRM") {
-          pendingEditRequest = null;
           safeSendJson(clientWs, { type: "EDIT_CONFIRM_CANCELLED" });
           return;
         }
@@ -1210,16 +1180,6 @@ function setupLiveProxy(server) {
       }
 
       if (geminiConnected && geminiWs?.readyState === WebSocket.OPEN) {
-        if (pendingEditRequest) {
-          try {
-            const parsedOutbound = JSON.parse(outbound);
-            if (parsedOutbound.realtimeInput || parsedOutbound.clientContent) {
-              return;
-            }
-          } catch {
-            return;
-          }
-        }
         geminiWs.send(outbound);
         return;
       }
