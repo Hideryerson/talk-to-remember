@@ -316,24 +316,18 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     };
 
     const mergeTranscriptChunk = (prev: string, chunk: string) => {
-      const cleanedChunk = chunk.replace(/\s+/g, " ").trim();
-      if (!cleanedChunk) return prev;
-      if (!prev) return cleanedChunk;
-      if (cleanedChunk.startsWith(prev)) return cleanedChunk;
-      if (prev.endsWith(cleanedChunk)) return prev;
+      if (!chunk) return prev;
+      if (!prev) return chunk;
 
-      // Check if previous character or the new character's first character is CJK
-      const isPrevCJK = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(prev.slice(-1));
-      const isNextCJK = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(cleanedChunk.charAt(0));
-      const isPunctuation = cleanedChunk.startsWith("'") || cleanedChunk.startsWith(",") || cleanedChunk.startsWith(".");
+      if (chunk.startsWith(prev)) return chunk;
+      if (prev.endsWith(chunk)) return prev;
 
-      const space = (isPrevCJK || isNextCJK || isPunctuation) ? "" : " ";
-      return `${prev}${space}${cleanedChunk}`.trim();
+      return prev + chunk;
     };
 
     const flushPendingUserTranscript = () => {
       clearUserTranscriptCommitTimer();
-      const normalized = pendingUserTranscriptRef.current.replace(/\s+/g, " ").trim();
+      const normalized = pendingUserTranscriptRef.current.trim();
       pendingUserTranscriptRef.current = "";
       if (!normalized) return;
       if (lastFinalUserTranscriptRef.current === normalized) return;
@@ -443,11 +437,10 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       },
       onUserTranscription: (text, isFinal) => {
         if (isPausedRef.current) return;
-        const normalized = text.replace(/\s+/g, " ").trim();
-        if (!normalized) return;
+        if (!text) return;
         pendingUserTranscriptRef.current = mergeTranscriptChunk(
           pendingUserTranscriptRef.current,
-          normalized
+          text
         );
         scheduleUserTranscriptFlush(isFinal ? 220 : 2500);
       },

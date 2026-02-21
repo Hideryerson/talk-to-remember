@@ -39,11 +39,11 @@ export interface LiveTranscriptEntry {
 
 export interface LiveAppEvent {
   type:
-    | "REQUIRE_EDIT_CONFIRM"
-    | "EDIT_STATUS"
-    | "EDIT_COMPLETED"
-    | "EDIT_FAILED"
-    | "EDIT_CONFIRM_CANCELLED";
+  | "REQUIRE_EDIT_CONFIRM"
+  | "EDIT_STATUS"
+  | "EDIT_COMPLETED"
+  | "EDIT_FAILED"
+  | "EDIT_CONFIRM_CANCELLED";
   instruction?: string;
   functionCallId?: string;
   functionName?: string;
@@ -194,7 +194,7 @@ export class LiveSession {
               const parsed = new URL(wsUrl);
               hint = ` Check proxy reachability at ${parsed.protocol === "wss:" ? "https" : "http"}://${parsed.host}/health.`;
             }
-          } catch {}
+          } catch { }
           this.callbacks.onError?.(`WebSocket connection error (${safeWsUrl}).${hint}`);
           this.connectResolve?.(false);
         };
@@ -367,7 +367,7 @@ export class LiveSession {
         const cleanedText =
           role === "ai"
             ? rawText.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/\[\s*thinking[^\]]*]/gi, "").trim()
-            : rawText.replace(/\s+/g, " ").trim();
+            : rawText;
         if (role && cleanedText) {
           const isFinal = message.transcript.isFinal === true;
           this.callbacks.onTranscriptEntry?.({ role, text: cleanedText, isFinal });
@@ -618,7 +618,7 @@ export class LiveSession {
     if (this.currentSource) {
       try {
         this.currentSource.stop();
-      } catch {}
+      } catch { }
       this.currentSource = null;
     }
     this.isPlaying = false;

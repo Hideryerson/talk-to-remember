@@ -931,10 +931,12 @@ function extractTranscriptEvents(upstreamMessage) {
   const turnComplete = Boolean(content.turnComplete ?? content.turn_complete);
 
   const pushEvent = (role, text, isFinal = false) => {
-    const cleanedText =
-      role === "ai" ? sanitizeAssistantText(text) : normalizeWhitespace(text);
-    if (!cleanedText) return;
-    events.push({ role, text: cleanedText, isFinal: Boolean(isFinal) });
+    let processText = typeof text === "string" ? text : "";
+    if (role === "ai") {
+      processText = sanitizeAssistantText(processText);
+    }
+    if (!processText) return;
+    events.push({ role, text: processText, isFinal: Boolean(isFinal) });
   };
 
   const inputTranscription = content.inputTranscription ?? content.input_transcription;
@@ -946,8 +948,8 @@ function extractTranscriptEvents(upstreamMessage) {
     const explicitFinal = readTranscriptionFinalFlag(resolvedInputPayload);
     const fallbackFinal = Boolean(
       inputTranscription?.isFinal ??
-        inputTranscription?.is_final ??
-        inputTranscription?.finished
+      inputTranscription?.is_final ??
+      inputTranscription?.finished
     );
     pushEvent("user", userText, explicitFinal ?? fallbackFinal);
   }
@@ -1049,12 +1051,12 @@ function setupLiveProxy(server) {
         if (clientWs.readyState === WebSocket.OPEN) {
           try {
             clientWs.ping();
-          } catch {}
+          } catch { }
         }
         if (geminiWs && geminiWs.readyState === WebSocket.OPEN) {
           try {
             geminiWs.ping();
-          } catch {}
+          } catch { }
         }
       }, HEARTBEAT_INTERVAL_MS);
     };
@@ -1069,7 +1071,7 @@ function setupLiveProxy(server) {
       }
     };
 
-    const sendToolResponseToGemini = (functionCallId, responsePayload) => {
+    const sendToolResponseToGemini = (functionCallId, functionCallName, responsePayload) => {
       if (!functionCallId) return;
       if (!geminiWs || geminiWs.readyState !== WebSocket.OPEN) return;
       try {
@@ -1079,6 +1081,7 @@ function setupLiveProxy(server) {
               functionResponses: [
                 {
                   id: functionCallId,
+                  name: functionCallName || "edit_photo",
                   response: responsePayload,
                 },
               ],
@@ -1114,7 +1117,7 @@ function setupLiveProxy(server) {
           type: "EDIT_FAILED",
           error: "Missing image data or edit instruction.",
         });
-        sendToolResponseToGemini(pendingEditRequest.functionCallId, {
+        sendToolResponseToGemini(pendingEditRequest.functionCallId, pendingEditRequest.functionName, {
           success: false,
           error: "Missing image data or edit instruction.",
         });
@@ -1147,7 +1150,7 @@ function setupLiveProxy(server) {
           mimeType: edited.mimeType,
         });
 
-        sendToolResponseToGemini(pendingEditRequest.functionCallId, {
+        sendToolResponseToGemini(pendingEditRequest.functionCallId, pendingEditRequest.functionName, {
           success: true,
           version: versionLabel,
           versionNumber: editVersionCounter,
@@ -1161,7 +1164,7 @@ function setupLiveProxy(server) {
           instruction,
           error: message,
         });
-        sendToolResponseToGemini(pendingEditRequest.functionCallId, {
+        sendToolResponseToGemini(pendingEditRequest.functionCallId, pendingEditRequest.functionName, {
           success: false,
           instruction,
           error: message,
