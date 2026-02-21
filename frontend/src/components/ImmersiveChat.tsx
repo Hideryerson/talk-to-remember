@@ -518,9 +518,16 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
               event.mimeType || imageMimeTypeRef.current,
               instruction
             );
+
+            // Send the edited image right back to Gemini so it can react verbally
+            const activeSession = liveSessionRef.current;
+            if (activeSession) {
+              const prompt = `I have just edited the photo according to your suggestion: "${instruction}". What do you see in the new version?`;
+              activeSession.sendImage(event.imageBase64, event.mimeType || imageMimeTypeRef.current, prompt);
+            }
           }
           clearPendingEditConfirmation();
-          setSessionState("connecting");
+          setSessionState("listening");
           return;
         }
 
@@ -1028,10 +1035,26 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
 
   // Handle using a specific version from gallery
   const handleUseVersion = (index: number) => {
-    // Send message to AI that we're using this version
-    if (liveSessionRef.current && imageVersions[index]) {
+    // Send message and image to AI that we're using this version
+    const session = liveSessionRef.current;
+    if (session && imageVersions[index]) {
       const versionLabel = index === 0 ? "the original photo" : `version ${index}`;
-      liveSessionRef.current.sendText(`I'd like to continue with ${versionLabel}.`);
+      const prompt = `I have restored ${versionLabel} as the active photo. Please ask me if I want to continue discussing the details of this version.`;
+
+      const targetVersion = imageVersions[index];
+      // Note: older versions might not have stored mimeType separately, fallback to image/jpeg
+      const mimeType = (targetVersion as any).mimeType || imageMimeTypeRef.current || "image/jpeg";
+
+      session.sendImage(targetVersion.dataUrl, mimeType, prompt);
+
+      // Ensure the listening UI indicates we are back to active session
+      if (sessionState === "paused") {
+        setIsPaused(false);
+        isPausedRef.current = false;
+        setSessionState("listening");
+      } else if (sessionState !== "speaking") {
+        setSessionState("listening");
+      }
     }
   };
 
@@ -1182,14 +1205,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         </div>
       )}
 
-      {sessionState === "editing" && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40">
-          <div className="bg-white/90 backdrop-blur-sm px-4 py-2.5 rounded-full flex items-center gap-2.5 shadow-lg border border-black/5">
-            <div className="w-5 h-5 border-2 border-[#007aff] border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm font-medium text-[#007aff]">Editing</span>
-          </div>
-        </div>
-      )}
+
 
       {/* Live connection/microphone error */}
       {liveError && (
@@ -1208,7 +1224,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       )}
 
       {showEditConfirm && pendingEditPrompt && !isEditing && (
-        <div className="fixed bottom-32 left-1/2 -translate-x-1/2 z-50 w-[88vw] max-w-md">
+        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[88vw] max-w-md">
           <div className="bg-white/92 backdrop-blur-xl border border-black/10 rounded-2xl shadow-xl p-4">
             <div className="flex items-center gap-2 text-[#007aff] mb-2">
               <Sparkles size={18} strokeWidth={2.2} />

@@ -59,7 +59,7 @@ export default function VersionGallery({
   // Fullscreen view of a specific version - white semi-transparent style
   if (fullscreenIndex !== null) {
     return (
-      <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md">
+      <div className="fixed inset-0 z-50 bg-white/95 backdrop-blur-md">
         {/* Fullscreen image */}
         <img
           src={versions[fullscreenIndex]?.dataUrl}
@@ -67,23 +67,23 @@ export default function VersionGallery({
           className="w-full h-full object-contain"
         />
 
-        {/* Top bar - white semi-transparent */}
+        {/* Top bar - light theme */}
         <div className="absolute top-0 left-0 right-0 safe-top z-30">
           <div className="flex items-center justify-between px-4 py-4">
             <button
               onClick={handleFullscreenClose}
-              className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center text-white active:scale-95 transition-transform touch-manipulation"
+              className="w-10 h-10 rounded-full bg-black/5 backdrop-blur-sm border border-black/10 flex items-center justify-center text-[#1d1d1f] active:scale-95 transition-transform touch-manipulation"
               aria-label="Back to gallery"
               type="button"
             >
               <ChevronLeft size={20} strokeWidth={2.5} />
             </button>
-            <span className="text-white font-medium bg-white/20 backdrop-blur-sm px-4 py-1.5 rounded-full">
+            <span className="text-[#1d1d1f] font-semibold bg-white/80 backdrop-blur-md px-4 py-1.5 rounded-full shadow-sm border border-black/5">
               {fullscreenIndex === 0 ? "Original" : `Version ${fullscreenIndex}`}
             </span>
             <button
               onClick={handleCloseGallery}
-              className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center text-white active:scale-95 transition-transform touch-manipulation"
+              className="w-10 h-10 rounded-full bg-black/5 backdrop-blur-sm border border-black/10 flex items-center justify-center text-[#1d1d1f] active:scale-95 transition-transform touch-manipulation"
               aria-label="Close gallery"
               type="button"
             >
@@ -92,11 +92,11 @@ export default function VersionGallery({
           </div>
         </div>
 
-        {/* Bottom bar - white semi-transparent */}
+        {/* Bottom bar - light theme */}
         <div className="absolute bottom-0 left-0 right-0 safe-bottom z-20">
-          <div className="bg-white/90 backdrop-blur-md mx-4 mb-4 p-4 rounded-2xl border border-white/50">
+          <div className="bg-white/95 backdrop-blur-xl mx-4 mb-4 p-4 rounded-3xl border border-black/5 shadow-lg">
             {versions[fullscreenIndex]?.editPrompt && (
-              <p className="text-[#1d1d1f]/80 text-sm text-center mb-3">
+              <p className="text-[#86868b] text-sm text-center mb-3">
                 &ldquo;{versions[fullscreenIndex].editPrompt}&rdquo;
               </p>
             )}
@@ -120,7 +120,7 @@ export default function VersionGallery({
           <h2 className="text-lg font-semibold text-[#1d1d1f]">Photo Versions</h2>
           <button
             onClick={handleCloseGallery}
-            className="w-10 h-10 rounded-full border border-[#86868b] flex items-center justify-center text-[#1d1d1f] active:scale-95 transition-transform touch-manipulation"
+            className="w-10 h-10 rounded-full bg-black/5 border border-black/10 flex items-center justify-center text-[#1d1d1f] active:scale-95 transition-transform touch-manipulation"
             aria-label="Back to conversation"
             type="button"
           >
@@ -160,24 +160,25 @@ export default function VersionGallery({
                 onClick={() => handleSelect(index)}
                 onDoubleClick={() => handleThumbnailDoubleClick(index)}
                 type="button"
-                className={`relative shrink-0 w-20 h-20 rounded-xl overflow-hidden border-2 transition-all ${
-                  index === selectedIndex
+                className={`relative shrink-0 w-20 h-20 rounded-xl overflow-hidden border-2 transition-all ${index === selectedIndex
                     ? "border-[#007aff] shadow-md"
                     : "border-transparent"
-                }`}
+                  }`}
               >
                 <img
                   src={version.dataUrl}
                   alt={`Version ${index}`}
                   className="w-full h-full object-cover"
                 />
-                {/* Version label */}
-                <div className="absolute bottom-1 left-1 bg-black/60 px-1.5 py-0.5 rounded text-[10px] text-white">
+                <div className="absolute bottom-1 left-1 bg-white/90 px-1.5 py-0.5 rounded text-[10px] font-medium text-[#1d1d1f] shadow-sm">
                   {index === 0 ? "Original" : `V${index}`}
                 </div>
                 {/* Selected indicator */}
                 {index === selectedIndex && (
-                  <div className="absolute top-1 right-1">
+                  <div className="absolute inset-0 ring-2 ring-inset ring-[#007aff] rounded-xl z-10 pointer-events-none"></div>
+                )}
+                {index === selectedIndex && (
+                  <div className="absolute top-1 right-1 z-20 bg-white rounded-full p-0.5 shadow-sm">
                     <CheckCircle2 size={20} strokeWidth={2.2} className="text-[#007aff] fill-white" />
                   </div>
                 )}
