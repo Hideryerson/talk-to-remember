@@ -7,9 +7,8 @@ import { Camera, ChevronLeft, RotateCcw, X } from "lucide-react";
 import {
   LiveSession,
   DEFAULT_SYSTEM_INSTRUCTION,
-  PHOTO_EDIT_TOOL,
   type LiveSessionCallbacks,
-  type ToolCall,
+  type LiveTranscriptEntry,
 } from "@/lib/liveSession";
 import ControlBar from "./ControlBar";
 import FloatingTranscript from "./FloatingTranscript";
@@ -41,6 +40,7 @@ export default function ImmersiveChat({
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [imageVersions, setImageVersions] = useState<ImageVersion[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [transcriptEntries, setTranscriptEntries] = useState<LiveTranscriptEntry[]>([]);
   const [sessionState, setSessionState] = useState<SessionState>("idle");
   const [showTranscript, setShowTranscript] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
@@ -62,13 +62,14 @@ export default function ImmersiveChat({
   const imageVersionsRef = useRef<ImageVersion[]>([]);
   const convoIdRef = useRef<string | null>(convoId);
   const liveSessionRef = useRef<LiveSession | null>(null);
-  const pendingToolCallRef = useRef<ToolCall | null>(null);
   const currentImageIndexRef = useRef(0);
   const isEditingRef = useRef(false);
   const imageMimeTypeRef = useRef(imageMimeType);
   const awaitingFirstAssistantTurnRef = useRef(false);
   const assistantAudioInCurrentTurnRef = useRef(false);
   const pendingAssistantTranscriptRef = useRef("");
+  const lastFinalUserTranscriptRef = useRef("");
+  const lastAutoEditPromptRef = useRef("");
 
   // Keep refs in sync
   useEffect(() => {
@@ -81,6 +82,20 @@ export default function ImmersiveChat({
     awaitingFirstAssistantTurnRef.current = awaitingFirstAssistantTurn;
     pendingAssistantTranscriptRef.current = pendingAssistantTranscript;
   }, [messages, imageVersions, convoId, currentImageIndex, isEditing, imageMimeType, awaitingFirstAssistantTurn, pendingAssistantTranscript]);
+
+  const appendTranscriptEntry = useCallback((entry: LiveTranscriptEntry) => {
+    if (!entry.isFinal) return;
+    const normalized = entry.text.replace(/\s+/g, " ").trim();
+    if (!normalized) return;
+
+    setTranscriptEntries((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.role === entry.role && last.text === normalized) {
+        return prev;
+      }
+      return [...prev, { role: entry.role, text: normalized, isFinal: true }];
+    });
+  }, []);
 
   // Decay mic level so listening waveform reflects real input and settles smoothly.
   useEffect(() => {
@@ -212,7 +227,6 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     const createSession = (credential: string, useProxy: boolean) => {
       const createdSession = new LiveSession(credential, {
         systemInstruction,
-        tools: [PHOTO_EDIT_TOOL],
         voiceName: "Puck",
         useProxy,
       });
@@ -229,6 +243,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     awaitingFirstAssistantTurnRef.current = true;
     assistantAudioInCurrentTurnRef.current = false;
     pendingAssistantTranscriptRef.current = "";
+    lastFinalUserTranscriptRef.current = "";
+    lastAutoEditPromptRef.current = "";
 
     const commitAssistantMessage = (text: string) => {
       const normalized = text.replace(/\s+/g, " ").trim();
@@ -242,6 +258,22 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       setMessages(updated);
       messagesRef.current = updated;
       setCurrentlySpeaking(normalized);
+      appendTranscriptEntry({ role: "ai", text: normalized, isFinal: true });
+      saveConversation(updated);
+    };
+
+    const commitUserMessage = (text: string) => {
+      const normalized = text.replace(/\s+/g, " ").trim();
+      if (!normalized) return;
+      const lastMsg = messagesRef.current[messagesRef.current.length - 1];
+      if (lastMsg?.role === "user" && lastMsg.text.replace(/\s+/g, " ").trim() === normalized) {
+        return;
+      }
+      const newMsg: ChatMessage = { role: "user", text: normalized };
+      const updated = [...messagesRef.current, newMsg];
+      setMessages(updated);
+      messagesRef.current = updated;
+      appendTranscriptEntry({ role: "user", text: normalized, isFinal: true });
       saveConversation(updated);
     };
 
@@ -252,6 +284,22 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       if (cleanedChunk.startsWith(prev)) return cleanedChunk;
       if (prev.endsWith(cleanedChunk)) return prev;
       return `${prev}${cleanedChunk.startsWith("'") || cleanedChunk.startsWith(",") || cleanedChunk.startsWith(".") ? "" : " "}${cleanedChunk}`.trim();
+    };
+
+    const extractEditPrompt = (spokenText: string): string | null => {
+      const normalized = spokenText.replace(/\s+/g, " ").trim();
+      if (!normalized) return null;
+      const lower = normalized.toLowerCase();
+      const englishEditIntent = /(edit|change|remove|erase|replace|add|crop|blur|brighten|darken|adjust|enhance|retouch|fix)/.test(lower);
+      const chineseEditIntent = /(编辑|修改|去掉|删除|移除|裁剪|模糊|提亮|调亮|调暗|添加|替换|增强|美化)/.test(normalized);
+      if (!englishEditIntent && !chineseEditIntent) return null;
+
+      let prompt = normalized
+        .replace(/^(can you|could you|please|let's|i want to|i'd like to|help me)\s+/i, "")
+        .replace(/^(帮我|请|请你|可以|能不能|我想|我要)\s*/u, "")
+        .trim();
+      if (!prompt) prompt = normalized;
+      return prompt;
     };
 
     const sessionCallbacks: LiveSessionCallbacks = {
@@ -289,6 +337,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         awaitingFirstAssistantTurnRef.current = false;
         assistantAudioInCurrentTurnRef.current = false;
         pendingAssistantTranscriptRef.current = "";
+        lastFinalUserTranscriptRef.current = "";
+        lastAutoEditPromptRef.current = "";
         setSessionState("idle");
       },
       onTextReceived: (text, isFinal) => {
@@ -314,40 +364,52 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       onInputAudioLevel: (level) => {
         setListeningLevel((prev) => Math.max(level, prev * 0.55));
       },
-      onToolCall: async (toolCall) => {
-        log("Tool call received:", toolCall);
-        if (toolCall.name === "edit_image") {
-          pendingToolCallRef.current = toolCall;
-          const editPrompt =
-            typeof toolCall.args?.editPrompt === "string"
-              ? toolCall.args.editPrompt
-              : "";
+      onUserTranscription: (text, isFinal) => {
+        if (!isFinal) return;
+        const normalized = text.replace(/\s+/g, " ").trim();
+        if (!normalized) return;
+        if (lastFinalUserTranscriptRef.current === normalized) return;
+        lastFinalUserTranscriptRef.current = normalized;
 
-          if (!editPrompt.trim()) {
-            if (liveSessionRef.current) {
-              liveSessionRef.current.sendToolResult(toolCall.id, {
-                success: false,
-                message: "Missing editPrompt argument.",
-              });
+        commitUserMessage(normalized);
+
+        const editPrompt = extractEditPrompt(normalized);
+        if (!editPrompt || isEditingRef.current) return;
+        if (lastAutoEditPromptRef.current === editPrompt) return;
+        lastAutoEditPromptRef.current = editPrompt;
+
+        void (async () => {
+          const activeSession = liveSessionRef.current;
+          activeSession?.interrupt();
+          const success = await handleEditImage(editPrompt);
+          const currentSession = liveSessionRef.current;
+          if (!currentSession) return;
+
+          if (success) {
+            const currentVersion = imageVersionsRef.current[currentImageIndexRef.current];
+            const currentDataUrl = currentVersion?.dataUrl;
+            if (currentDataUrl && currentDataUrl.includes(",")) {
+              const base64 = currentDataUrl.split(",")[1];
+              currentSession.sendImage(
+                base64,
+                imageMimeTypeRef.current,
+                `The photo is now edited based on this request: "${editPrompt}". Briefly acknowledge and continue the conversation.`
+              );
+            } else {
+              currentSession.sendText(
+                `The photo was edited as requested: "${editPrompt}". Briefly acknowledge and continue the conversation.`
+              );
             }
-            pendingToolCallRef.current = null;
             return;
           }
 
-          // Execute the edit
-          const success = await handleEditImage(editPrompt);
-
-          // Send result back to Live API
-          if (liveSessionRef.current) {
-            liveSessionRef.current.sendToolResult(toolCall.id, {
-              success,
-              message: success
-                ? `Photo edited: ${editPrompt}`
-                : `Photo edit failed: ${editPrompt}`,
-            });
-          }
-          pendingToolCallRef.current = null;
-        }
+          currentSession.sendText(
+            `The photo edit failed for this request: "${editPrompt}". Apologize briefly and ask the user to try a different edit request.`
+          );
+        })();
+      },
+      onTranscriptEntry: (entry) => {
+        appendTranscriptEntry(entry);
       },
       onError: (error) => {
         log("Live session error:", error);
@@ -359,6 +421,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         awaitingFirstAssistantTurnRef.current = false;
         assistantAudioInCurrentTurnRef.current = false;
         pendingAssistantTranscriptRef.current = "";
+        lastFinalUserTranscriptRef.current = "";
+        lastAutoEditPromptRef.current = "";
         setSessionState("idle");
       },
       onInterrupted: () => {
@@ -369,6 +433,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         awaitingFirstAssistantTurnRef.current = false;
         assistantAudioInCurrentTurnRef.current = false;
         pendingAssistantTranscriptRef.current = "";
+        lastFinalUserTranscriptRef.current = "";
         setSessionState("listening");
       },
       onPlaybackComplete: () => {
@@ -440,9 +505,11 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       awaitingFirstAssistantTurnRef.current = false;
       assistantAudioInCurrentTurnRef.current = false;
       pendingAssistantTranscriptRef.current = "";
+      lastFinalUserTranscriptRef.current = "";
+      lastAutoEditPromptRef.current = "";
       setSessionState("idle");
     }
-  }, [profile]);
+  }, [appendTranscriptEntry, profile]);
 
   const hydrateConversation = async (id: string) => {
     try {
@@ -462,6 +529,18 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       currentImageIndexRef.current = initialIndex;
       setMessages(convo.messages || []);
       messagesRef.current = convo.messages || [];
+      const transcriptHistory: LiveTranscriptEntry[] = (Array.isArray(convo.messages) ? convo.messages : [])
+        .map((msg: ChatMessage): LiveTranscriptEntry | null => {
+          const normalized = msg.text.replace(/\s+/g, " ").trim();
+          if (!normalized) return null;
+          return {
+            role: msg.role === "user" ? "user" : "ai",
+            text: normalized,
+            isFinal: true,
+          };
+        })
+        .filter((item: LiveTranscriptEntry | null): item is LiveTranscriptEntry => item !== null);
+      setTranscriptEntries(transcriptHistory);
       setPendingAssistantTranscript("");
       pendingAssistantTranscriptRef.current = "";
 
@@ -525,7 +604,14 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
   // Warm mic permission on user gesture to reduce iOS/Safari capture failures.
   const warmupMicrophonePermission = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+        },
+      });
       stream.getTracks().forEach((track) => track.stop());
     } catch (err) {
       log("Microphone warmup skipped:", err);
@@ -586,6 +672,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       currentImageIndexRef.current = 0;
       imageVersionsRef.current = [firstVersion];
       setMessages([]);
+      setTranscriptEntries([]);
       messagesRef.current = [];
       setPendingAssistantTranscript("");
       pendingAssistantTranscriptRef.current = "";
@@ -765,6 +852,12 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     imageVersions.length > 0
       ? imageVersions[currentImageIndex]?.dataUrl
       : image;
+  const transcriptMessages: Array<{ role: "user" | "model"; text: string }> = transcriptEntries.map((entry) => ({
+    role: entry.role === "user" ? "user" : "model",
+    text: entry.text,
+  }));
+  const safeListeningLevel = Math.max(0, Math.min(1, listeningLevel));
+  const listeningBarMultipliers = [0.55, 0.78, 1, 0.78, 0.55];
   const transcriptPreparing =
     messages.length === 0 &&
     pendingAssistantTranscript.trim().length === 0 &&
@@ -863,6 +956,35 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         </div>
       )}
 
+      {(sessionState === "listening" || sessionState === "speaking") && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40">
+          <div className="bg-white/90 backdrop-blur-sm px-4 py-2.5 rounded-full flex items-center gap-2.5 shadow-lg border border-black/5">
+            {sessionState === "listening" ? (
+              <>
+                <div className="listening-indicator">
+                  {listeningBarMultipliers.map((multiplier, index) => {
+                    const minHeight = 5 + (index % 2);
+                    const dynamicHeight = Math.round((6 + safeListeningLevel * 14) * multiplier);
+                    return (
+                      <span
+                        key={`top-listening-level-${index}`}
+                        style={{ height: `${Math.max(minHeight, dynamicHeight)}px` }}
+                      />
+                    );
+                  })}
+                </div>
+                <span className="text-sm font-medium text-[#007aff]">Listening</span>
+              </>
+            ) : (
+              <>
+                <div className="w-2.5 h-2.5 bg-[#34c759] rounded-full speaking" />
+                <span className="text-sm font-medium text-[#34c759]">Speaking</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Live connection/microphone error */}
       {liveError && (
         <div className="fixed top-20 left-4 right-4 z-40">
@@ -922,7 +1044,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
 
       {/* Floating transcript */}
       <FloatingTranscript
-        messages={messages}
+        messages={transcriptMessages}
         visible={showTranscript}
         currentlySpeaking={currentlySpeaking}
         isPreparing={transcriptPreparing}
@@ -935,9 +1057,6 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         onToggleTranscript={() => setShowTranscript(!showTranscript)}
         onEndSession={handleEndSession}
         onOpenGallery={() => setShowGallery(true)}
-        isListening={sessionState === "listening"}
-        isSpeaking={sessionState === "speaking"}
-        listeningLevel={listeningLevel}
       />
 
       {/* Version gallery modal */}

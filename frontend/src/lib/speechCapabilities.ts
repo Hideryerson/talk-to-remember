@@ -141,7 +141,14 @@ export async function requestMicrophonePermission(): Promise<MicPermissionResult
 
   try {
     // Try to get permission
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+      },
+    });
 
     // Got permission - release the stream immediately
     stream.getTracks().forEach((track) => track.stop());

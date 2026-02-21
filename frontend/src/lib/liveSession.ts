@@ -31,12 +31,20 @@ export interface ToolCall {
   args: Record<string, any>;
 }
 
+export interface LiveTranscriptEntry {
+  role: "user" | "ai";
+  text: string;
+  isFinal: boolean;
+}
+
 export interface LiveSessionCallbacks {
   onConnected?: () => void;
   onDisconnected?: () => void;
   onAudioReceived?: (audioData: ArrayBuffer) => void;
   onInputAudioLevel?: (level: number) => void;
   onTextReceived?: (text: string, isFinal: boolean) => void;
+  onUserTranscription?: (text: string, isFinal: boolean) => void;
+  onTranscriptEntry?: (entry: LiveTranscriptEntry) => void;
   onToolCall?: (toolCall: ToolCall) => void;
   onError?: (error: string) => void;
   onInterrupted?: () => void;
@@ -263,6 +271,8 @@ export class LiveSession {
             },
           },
         },
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
         systemInstruction: this.config.systemInstruction
           ? { parts: [{ text: this.config.systemInstruction }] }
           : undefined,
@@ -314,13 +324,53 @@ export class LiveSession {
         return;
       }
 
+      if (message.transcript) {
+        const rawRole = message.transcript.role;
+        const role: "user" | "ai" | null =
+          rawRole === "user" ? "user" : rawRole === "ai" ? "ai" : null;
+        const rawText =
+          typeof message.transcript.text === "string" ? message.transcript.text : "";
+        const cleanedText =
+          role === "ai"
+            ? rawText.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/\[\s*thinking[^\]]*]/gi, "").trim()
+            : rawText.replace(/\s+/g, " ").trim();
+        if (role && cleanedText) {
+          const isFinal = message.transcript.isFinal !== false;
+          this.callbacks.onTranscriptEntry?.({ role, text: cleanedText, isFinal });
+          if (role === "user") {
+            this.callbacks.onUserTranscription?.(cleanedText, isFinal);
+          } else {
+            this.callbacks.onTextReceived?.(cleanedText, isFinal);
+          }
+        }
+        return;
+      }
+
       // Handle server content (audio + speech transcription)
-      if (message.serverContent) {
-        const content = message.serverContent;
+      const content = message.serverContent || message.server_content;
+      if (content) {
+        const modelTurn = content.modelTurn || content.model_turn;
+        const turnComplete = Boolean(content.turnComplete ?? content.turn_complete);
 
         // Model turn with parts
-        if (content.modelTurn?.parts) {
-          for (const part of content.modelTurn.parts) {
+        if (modelTurn?.parts) {
+          for (const part of modelTurn.parts) {
+            if (
+              typeof part.text === "string" &&
+              part.text.trim() &&
+              !part.thought &&
+              !part.thoughtSignature &&
+              !part.thought_signature
+            ) {
+              const cleanedText = part.text
+                .replace(/<think>[\s\S]*?<\/think>/gi, "")
+                .replace(/\[\s*thinking[^\]]*]/gi, "")
+                .trim();
+              if (cleanedText) {
+                this.callbacks.onTextReceived?.(cleanedText, turnComplete);
+              }
+            }
+
             // Audio response (inline data)
             if (part.inlineData?.data) {
               const audioBytes = this.base64ToArrayBuffer(part.inlineData.data);
@@ -341,17 +391,69 @@ export class LiveSession {
           content.outputTranscription?.text ||
           content.outputTranscription?.transcript ||
           content.outputTranscription?.partialText ||
+          content.outputTranscription?.partial_text ||
+          content.output_transcription?.text ||
+          content.output_transcription?.transcript ||
+          content.output_transcription?.partialText ||
+          content.output_transcription?.partial_text ||
           content.outputAudioTranscription?.text ||
           content.outputAudioTranscription?.transcript ||
-          content.outputAudioTranscription?.partialText;
+          content.outputAudioTranscription?.partialText ||
+          content.outputAudioTranscription?.partial_text ||
+          content.output_audio_transcription?.text ||
+          content.output_audio_transcription?.transcript ||
+          content.output_audio_transcription?.partialText ||
+          content.output_audio_transcription?.partial_text;
         if (typeof outputTranscriptionText === "string" && outputTranscriptionText.trim()) {
           const isOutputFinal =
             Boolean(content.outputTranscription?.finished) ||
             Boolean(content.outputTranscription?.isFinal) ||
+            Boolean(content.outputTranscription?.is_final) ||
+            Boolean(content.output_transcription?.finished) ||
+            Boolean(content.output_transcription?.isFinal) ||
+            Boolean(content.output_transcription?.is_final) ||
             Boolean(content.outputAudioTranscription?.finished) ||
             Boolean(content.outputAudioTranscription?.isFinal) ||
-            Boolean(content.turnComplete);
+            Boolean(content.outputAudioTranscription?.is_final) ||
+            Boolean(content.output_audio_transcription?.finished) ||
+            Boolean(content.output_audio_transcription?.isFinal) ||
+            Boolean(content.output_audio_transcription?.is_final) ||
+            turnComplete;
           this.callbacks.onTextReceived?.(outputTranscriptionText, isOutputFinal);
+        }
+
+        const inputTranscriptionText =
+          content.inputTranscription?.text ||
+          content.inputTranscription?.transcript ||
+          content.inputTranscription?.partialText ||
+          content.inputTranscription?.partial_text ||
+          content.input_transcription?.text ||
+          content.input_transcription?.transcript ||
+          content.input_transcription?.partialText ||
+          content.input_transcription?.partial_text ||
+          content.inputAudioTranscription?.text ||
+          content.inputAudioTranscription?.transcript ||
+          content.inputAudioTranscription?.partialText ||
+          content.inputAudioTranscription?.partial_text ||
+          content.input_audio_transcription?.text ||
+          content.input_audio_transcription?.transcript ||
+          content.input_audio_transcription?.partialText ||
+          content.input_audio_transcription?.partial_text;
+        if (typeof inputTranscriptionText === "string" && inputTranscriptionText.trim()) {
+          const isInputFinal =
+            Boolean(content.inputTranscription?.finished) ||
+            Boolean(content.inputTranscription?.isFinal) ||
+            Boolean(content.inputTranscription?.is_final) ||
+            Boolean(content.input_transcription?.finished) ||
+            Boolean(content.input_transcription?.isFinal) ||
+            Boolean(content.input_transcription?.is_final) ||
+            Boolean(content.inputAudioTranscription?.finished) ||
+            Boolean(content.inputAudioTranscription?.isFinal) ||
+            Boolean(content.inputAudioTranscription?.is_final) ||
+            Boolean(content.input_audio_transcription?.finished) ||
+            Boolean(content.input_audio_transcription?.isFinal) ||
+            Boolean(content.input_audio_transcription?.is_final);
+          this.callbacks.onUserTranscription?.(inputTranscriptionText, isInputFinal);
         }
 
         // Interrupted
@@ -362,7 +464,7 @@ export class LiveSession {
         }
 
         // Turn complete
-        if (content.turnComplete) {
+        if (turnComplete) {
           log("Turn complete");
           this.callbacks.onTurnComplete?.();
         }
@@ -746,14 +848,14 @@ Your role:
 1. When shown a photo, describe what you see with curiosity and warmth
 2. Ask gentle questions about the moment, emotions, and memories it evokes
 3. Listen actively and respond thoughtfully to what the user shares
-4. If they want to edit the photo, understand their intent and call the edit_image function
+4. If they want to edit the photo, ask for a clear edit instruction in one short sentence
 5. Keep responses conversational and natural - you're having a flowing dialogue
 
 Guidelines:
 - Be warm but not overly enthusiastic
 - Ask one question at a time
 - Acknowledge emotions the user expresses
-- When they want to edit, confirm the intent before calling the function
+- When they want to edit, confirm the intent briefly and continue after the edit
 - Keep your responses concise for natural conversation flow
 
 Remember: This is an audio conversation. Keep responses natural and conversational.`;

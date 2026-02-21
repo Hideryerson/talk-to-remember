@@ -61,9 +61,7 @@ export default function FloatingTranscript({
     );
   }
 
-  // Only show last 3 stored messages for minimal UI, plus current live partial transcript.
-  const recentMessages = messages.slice(-3);
-  const renderMessages = [...recentMessages];
+  const renderMessages = [...messages];
   if (normalizedPending) {
     const last = renderMessages[renderMessages.length - 1];
     if (!(last && last.role === "model" && last.text.replace(/\s+/g, " ").trim() === normalizedPending)) {

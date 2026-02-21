@@ -807,6 +807,133 @@ function safeSendJson(ws, payload) {
   }
 }
 
+function normalizeWhitespace(value) {
+  if (typeof value !== "string") return "";
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function sanitizeAssistantText(value) {
+  const raw = typeof value === "string" ? value : "";
+  const withoutThoughtTags = raw
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .replace(/\[\s*thinking[^\]]*]/gi, "")
+    .trim();
+  return normalizeWhitespace(withoutThoughtTags);
+}
+
+function readTranscriptionText(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  const candidate =
+    payload.text ??
+    payload.transcript ??
+    payload.partialText ??
+    payload.partial_text;
+  return normalizeWhitespace(typeof candidate === "string" ? candidate : "");
+}
+
+function readTranscriptionFinalFlag(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  const candidate =
+    payload.isFinal ??
+    payload.is_final ??
+    payload.finished ??
+    payload.final;
+  return typeof candidate === "boolean" ? candidate : null;
+}
+
+function withLiveTranscriptionEnabled(message) {
+  if (!message || typeof message !== "object" || !message.setup) {
+    return message;
+  }
+
+  const setup = message.setup;
+  if (!setup || typeof setup !== "object") {
+    return message;
+  }
+
+  const normalizeSetupFlag = (value) => {
+    if (value === true || value == null) return {};
+    if (typeof value === "object") return value;
+    return {};
+  };
+
+  if ("inputAudioTranscription" in setup) {
+    setup.inputAudioTranscription = normalizeSetupFlag(setup.inputAudioTranscription);
+  } else if ("input_audio_transcription" in setup) {
+    setup.input_audio_transcription = normalizeSetupFlag(setup.input_audio_transcription);
+  } else {
+    setup.inputAudioTranscription = {};
+  }
+
+  if ("outputAudioTranscription" in setup) {
+    setup.outputAudioTranscription = normalizeSetupFlag(setup.outputAudioTranscription);
+  } else if ("output_audio_transcription" in setup) {
+    setup.output_audio_transcription = normalizeSetupFlag(setup.output_audio_transcription);
+  } else {
+    setup.outputAudioTranscription = {};
+  }
+
+  return message;
+}
+
+function extractTranscriptEvents(upstreamMessage) {
+  const content = upstreamMessage?.serverContent ?? upstreamMessage?.server_content;
+  if (!content || typeof content !== "object") {
+    return [];
+  }
+
+  const events = [];
+  const turnComplete = Boolean(content.turnComplete ?? content.turn_complete);
+
+  const pushEvent = (role, text, isFinal = false) => {
+    const cleanedText =
+      role === "ai" ? sanitizeAssistantText(text) : normalizeWhitespace(text);
+    if (!cleanedText) return;
+    events.push({ role, text: cleanedText, isFinal: Boolean(isFinal) });
+  };
+
+  const inputTranscription = content.inputTranscription ?? content.input_transcription;
+  const inputAudioTranscription =
+    content.inputAudioTranscription ?? content.input_audio_transcription;
+  const resolvedInputPayload = inputAudioTranscription ?? inputTranscription;
+  const userText = readTranscriptionText(resolvedInputPayload);
+  if (userText) {
+    const explicitFinal = readTranscriptionFinalFlag(resolvedInputPayload);
+    const fallbackFinal = Boolean(inputTranscription);
+    pushEvent("user", userText, explicitFinal ?? fallbackFinal);
+  }
+
+  const modelTurn = content.modelTurn ?? content.model_turn;
+  if (modelTurn?.parts && Array.isArray(modelTurn.parts)) {
+    for (const part of modelTurn.parts) {
+      if (!part || typeof part !== "object") continue;
+      if (part.thought || part.thoughtSignature || part.thought_signature) continue;
+      if (typeof part.text !== "string") continue;
+      pushEvent("ai", part.text, turnComplete);
+    }
+  }
+
+  const outputTranscription = content.outputTranscription ?? content.output_transcription;
+  const outputAudioTranscription =
+    content.outputAudioTranscription ?? content.output_audio_transcription;
+  const resolvedOutputPayload = outputAudioTranscription ?? outputTranscription;
+  const aiTranscript = readTranscriptionText(resolvedOutputPayload);
+  if (aiTranscript) {
+    const explicitFinal = readTranscriptionFinalFlag(resolvedOutputPayload);
+    pushEvent("ai", aiTranscript, explicitFinal ?? turnComplete);
+  }
+
+  const dedupedEvents = [];
+  const seen = new Set();
+  for (const event of events) {
+    const key = `${event.role}|${event.isFinal ? "1" : "0"}|${event.text}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    dedupedEvents.push(event);
+  }
+  return dedupedEvents;
+}
+
 function setupLiveProxy(server) {
   const wss = new WebSocketServer({ server, path: LIVE_PROXY_PATH });
 
@@ -817,6 +944,7 @@ function setupLiveProxy(server) {
     let geminiWs = null;
     let geminiConnected = false;
     let heartbeatTimer = null;
+    const lastPartialTranscriptByRole = { user: "", ai: "" };
     const queue = [];
 
     const stopHeartbeat = () => {
@@ -879,6 +1007,18 @@ function setupLiveProxy(server) {
       clientWs.send(data);
       try {
         const parsed = JSON.parse(data.toString());
+        const transcriptEvents = extractTranscriptEvents(parsed);
+        for (const event of transcriptEvents) {
+          if (!event.isFinal && lastPartialTranscriptByRole[event.role] === event.text) {
+            continue;
+          }
+          safeSendJson(clientWs, { transcript: event });
+          if (event.isFinal) {
+            lastPartialTranscriptByRole[event.role] = "";
+          } else {
+            lastPartialTranscriptByRole[event.role] = event.text;
+          }
+        }
         if (parsed.setupComplete) {
           safeSendJson(clientWs, { proxy: { type: "ready_for_audio" } });
         }
@@ -908,15 +1048,24 @@ function setupLiveProxy(server) {
     });
 
     clientWs.on("message", (data) => {
+      let outbound = data;
+      try {
+        const parsed = JSON.parse(data.toString());
+        const patched = withLiveTranscriptionEnabled(parsed);
+        outbound = JSON.stringify(patched);
+      } catch {
+        // Binary chunks and non-JSON payloads are forwarded unchanged.
+      }
+
       if (geminiConnected && geminiWs?.readyState === WebSocket.OPEN) {
-        geminiWs.send(data);
+        geminiWs.send(outbound);
         return;
       }
 
       if (queue.length >= MAX_QUEUE_MESSAGES) {
         queue.shift();
       }
-      queue.push(data);
+      queue.push(outbound);
     });
 
     clientWs.on("close", () => {
