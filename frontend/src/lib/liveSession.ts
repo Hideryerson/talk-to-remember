@@ -656,16 +656,57 @@ export class LiveSession {
       this.stopAudioInput();
       this.resetInputNoiseGate();
 
-      // Get microphone access
-      this.mediaStream = await navigator.mediaDevices.getUserMedia({
+      // Get microphone access without strict hardware sampleRate constraints 
+      // (forcing 16000Hz causes Apple devices to drop AirPods and fallback to Continuity iPhone mics)
+      let stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          sampleRate: 16000,
-          channelCount: 1,
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
         },
       });
+
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = devices.filter(d => d.kind === 'audioinput');
+
+        let preferredDevice = audioInputs.find(d =>
+          d.label.toLowerCase().includes('airpods') ||
+          d.label.toLowerCase().includes('headset') ||
+          d.label.toLowerCase().includes('headphones') ||
+          d.label.toLowerCase().includes('earpods')
+        );
+
+        // If on Mac and it grabbed the Continuity Camera iPhone mic by default, 
+        // try to force it back to Mac built-in if no headset is found.
+        if (!preferredDevice) {
+          const hasIphone = audioInputs.some(d => d.label.toLowerCase().includes('iphone'));
+          const builtIn = audioInputs.find(d => d.label.toLowerCase().includes('macbook') || d.label.toLowerCase().includes('built-in'));
+          if (hasIphone && builtIn) {
+            preferredDevice = builtIn;
+          }
+        }
+
+        if (preferredDevice) {
+          const currentTrack = stream.getAudioTracks()[0];
+          if (currentTrack && currentTrack.label !== preferredDevice.label) {
+            log("Switching audio input from", currentTrack.label, "to preferred device:", preferredDevice.label);
+            stream.getTracks().forEach(t => t.stop());
+            stream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                deviceId: { exact: preferredDevice.deviceId },
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+              }
+            });
+          }
+        }
+      } catch (e) {
+        log("Device enumeration failed, using default stream:", e);
+      }
+
+      this.mediaStream = stream;
 
       // Create audio processing pipeline
       this.inputAudioContext = new AudioContext({ sampleRate: 16000 });
