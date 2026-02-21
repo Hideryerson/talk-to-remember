@@ -1077,20 +1077,12 @@ function setupLiveProxy(server) {
       try {
         geminiWs.send(
           JSON.stringify({
-            clientContent: {
-              turnComplete: true,
-              turns: [
+            toolResponse: {
+              functionResponses: [
                 {
-                  role: "user",
-                  parts: [
-                    {
-                      functionResponse: {
-                        id: functionCallId,
-                        name: functionCallName || "edit_photo",
-                        response: responsePayload,
-                      },
-                    },
-                  ],
+                  id: functionCallId,
+                  name: functionCallName || "edit_photo",
+                  response: responsePayload,
                 },
               ],
             },
@@ -1298,6 +1290,16 @@ function setupLiveProxy(server) {
       }
 
       if (geminiConnected && geminiWs?.readyState === WebSocket.OPEN) {
+        if (pendingEditRequest) {
+          try {
+            const parsedOutbound = JSON.parse(outbound);
+            if (parsedOutbound.realtimeInput || parsedOutbound.clientContent) {
+              return;
+            }
+          } catch {
+            return;
+          }
+        }
         geminiWs.send(outbound);
         return;
       }
