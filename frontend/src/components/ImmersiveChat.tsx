@@ -1045,7 +1045,11 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       // Note: older versions might not have stored mimeType separately, fallback to image/jpeg
       const mimeType = (targetVersion as any).mimeType || imageMimeTypeRef.current || "image/jpeg";
 
-      session.sendImage(targetVersion.dataUrl, mimeType, prompt);
+      const base64Data = targetVersion.dataUrl.includes("base64,")
+        ? targetVersion.dataUrl.split("base64,")[1]
+        : targetVersion.dataUrl;
+
+      session.sendImage(base64Data, mimeType, prompt);
 
       // Ensure the listening UI indicates we are back to active session
       if (sessionState === "paused") {
@@ -1286,9 +1290,13 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       {/* Editing overlay */}
       {isEditing && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-          <div className="bg-white/95 backdrop-blur-md px-6 py-4 rounded-2xl flex items-center gap-3 shadow-lg">
-            <div className="w-6 h-6 border-2 border-[#007aff] border-t-transparent rounded-full animate-spin" />
-            <span className="text-lg text-[#1d1d1f]">Editing photo...</span>
+          <div className="bg-white/95 backdrop-blur-md px-6 py-4 rounded-full flex items-center gap-3.5 shadow-xl border border-black/5">
+            <div className="preparing-dots scale-110" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+            <span className="text-base font-medium text-[#1d1d1f]">Editing</span>
           </div>
         </div>
       )}
@@ -1296,9 +1304,13 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       {/* Saving Session overlay */}
       {isSaving && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-          <div className="bg-white/95 backdrop-blur-md px-6 py-4 rounded-2xl flex items-center gap-3 shadow-lg">
-            <div className="w-6 h-6 border-2 border-[#007aff] border-t-transparent rounded-full animate-spin" />
-            <span className="text-lg text-[#1d1d1f]">Saving session...</span>
+          <div className="bg-white/95 backdrop-blur-md px-6 py-4 rounded-full flex items-center gap-3.5 shadow-xl border border-black/5">
+            <div className="preparing-dots scale-110" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+            <span className="text-base font-medium text-[#1d1d1f]">Saving</span>
           </div>
         </div>
       )}

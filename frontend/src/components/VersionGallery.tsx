@@ -137,15 +137,17 @@ export default function VersionGallery({
             alt={`Version ${selectedIndex}`}
             className="w-full h-full object-contain"
           />
-          {versions[selectedIndex]?.editPrompt && (
-            <div className="absolute bottom-4 left-4 right-4">
-              <div className="bg-white/90 backdrop-blur-sm px-4 py-3 rounded-xl text-sm text-center text-[#1d1d1f] border border-black/5">
-                &ldquo;{versions[selectedIndex].editPrompt}&rdquo;
-              </div>
-            </div>
-          )}
         </div>
       </div>
+
+      {/* Edit Prompt floating badge */}
+      {versions[selectedIndex]?.editPrompt && (
+        <div className="absolute bottom-40 left-0 right-0 z-20 flex justify-center px-4 pointer-events-none">
+          <div className="bg-white/95 backdrop-blur-md px-5 py-3 rounded-2xl text-sm font-medium text-[#1d1d1f] border border-black/5 shadow-md max-w-sm text-center">
+            &ldquo;{versions[selectedIndex].editPrompt}&rdquo;
+          </div>
+        </div>
+      )}
 
       {/* Thumbnail strip */}
       <div className="absolute bottom-0 left-0 right-0 safe-bottom z-20">
@@ -161,8 +163,8 @@ export default function VersionGallery({
                 onDoubleClick={() => handleThumbnailDoubleClick(index)}
                 type="button"
                 className={`relative shrink-0 w-20 h-20 rounded-xl overflow-hidden border-2 transition-all ${index === selectedIndex
-                    ? "border-[#007aff] shadow-md"
-                    : "border-transparent"
+                  ? "border-[#007aff] shadow-md"
+                  : "border-transparent"
                   }`}
               >
                 <img
