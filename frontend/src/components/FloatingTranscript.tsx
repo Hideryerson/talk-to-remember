@@ -23,7 +23,7 @@ export default function FloatingTranscript({
   pendingAssistantText = "",
 }: FloatingTranscriptProps) {
   const wrapperClass =
-    "fixed bottom-[12.5rem] left-1/2 -translate-x-1/2 w-[68vw] max-w-[380px] z-30 safe-bottom pointer-events-none";
+    "fixed bottom-[7.5rem] left-1/2 -translate-x-1/2 w-[68vw] max-w-[380px] z-30 safe-bottom pointer-events-none";
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomAnchorRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -92,6 +92,10 @@ export default function FloatingTranscript({
         ref={scrollRef}
         onScroll={handleScroll}
         className="transcript-bubble p-2 max-h-[150px] overflow-y-auto overscroll-contain no-scrollbar ios-transition touch-pan-y pointer-events-auto"
+        style={{
+          maskImage: 'linear-gradient(to bottom, transparent, black 15%, black)',
+          WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 15%, black)'
+        }}
       >
         <div className="space-y-3 pb-3">
           {renderMessages.map((msg, i) => (
