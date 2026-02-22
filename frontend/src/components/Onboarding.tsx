@@ -224,22 +224,16 @@ export default function Onboarding({ onComplete, onBackToAuth, pendingCredential
       {/* Scrollable Chat Area */}
       <div className="flex-1 overflow-y-auto px-6 py-2 flex flex-col w-full max-w-md mx-auto">
         <div className="flex flex-col justify-center gap-6 pb-8 min-h-full">
-          {/* System Question Bubble */}
-          <div className="bg-[#007aff] text-white px-5 py-3.5 rounded-2xl rounded-tl-[4px] self-start max-w-[85%] shadow-sm">
-            <p className="text-[15px] leading-relaxed">
-              {currentStep.prompt}
-            </p>
-          </div>
+          <h2 className="text-2xl font-semibold text-center mb-6 text-[#1d1d1f]">
+            {currentStep.prompt}
+          </h2>
 
-          {/* User Input Bubble */}
-          <div className="self-end w-[90%] relative">
+          <div className="w-full relative">
             {currentStep.multiline ? (
               <textarea
                 value={currentValue}
                 onChange={(e) => updateCurrentValue(e.target.value)}
-                placeholder={currentStep.placeholder}
-                className="w-full min-h-[140px] bg-white border-0 shadow-sm rounded-2xl rounded-tr-[4px] p-4 text-[#1d1d1f] placeholder-[#86868b] outline-none focus:ring-2 focus:ring-[#007aff]/30 transition-shadow resize-none"
-                disabled={saving}
+                className="w-full min-h-[140px] bg-black/5 rounded-xl p-4 text-[#1d1d1f] placeholder-[#86868b] outline-none focus:bg-white focus:ring-2 focus:ring-[#007aff] transition-all resize-none"
                 autoFocus
               />
             ) : (
@@ -252,9 +246,7 @@ export default function Onboarding({ onComplete, onBackToAuth, pendingCredential
                     void handleNext();
                   }
                 }}
-                placeholder={currentStep.placeholder}
-                className="w-full bg-white border-0 shadow-sm rounded-2xl rounded-tr-[4px] px-5 py-4 text-[#1d1d1f] placeholder-[#86868b] outline-none focus:ring-2 focus:ring-[#007aff]/30 transition-shadow"
-                disabled={saving}
+                className="w-full h-14 bg-black/5 rounded-xl px-5 text-[#1d1d1f] placeholder-[#86868b] outline-none focus:bg-white focus:ring-2 focus:ring-[#007aff] transition-all"
                 autoFocus
               />
             )}
@@ -274,8 +266,7 @@ export default function Onboarding({ onComplete, onBackToAuth, pendingCredential
           <button
             type="button"
             onClick={handleBack}
-            disabled={saving}
-            className="flex-1 py-3.5 rounded-xl bg-white border border-gray-200 text-[#1d1d1f] font-medium disabled:opacity-50 transition-colors shadow-sm active:bg-gray-50"
+            className="flex-1 h-14 rounded-xl bg-black/5 text-[#1d1d1f] font-semibold disabled:opacity-50 transition-colors flex items-center justify-center active:bg-black/10"
           >
             Back
           </button>
@@ -284,8 +275,7 @@ export default function Onboarding({ onComplete, onBackToAuth, pendingCredential
             onClick={() => {
               void handleNext();
             }}
-            disabled={!canProceed}
-            className="flex-1 py-3.5 rounded-xl bg-[#007aff] text-white font-semibold disabled:opacity-50 transition-transform active:scale-[0.98] shadow-sm"
+            className="flex-1 h-14 rounded-xl bg-[#007aff] text-white font-semibold disabled:opacity-50 transition-colors flex items-center justify-center active:bg-[#0066d6]"
           >
             {saving ? "Saving..." : isLastStep ? "Finish" : "Next"}
           </button>

@@ -124,7 +124,7 @@ export default function AuthForm({ onSuccess, onStartRegistration }: AuthFormPro
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full bg-[#f7f7f8] border border-gray-200 rounded-xl px-4 py-3 text-[#1d1d1f] placeholder-[#86868b] outline-none focus:border-[#007aff] focus:ring-2 focus:ring-[#007aff]/20"
+              className="w-full h-14 bg-black/5 rounded-xl px-4 text-[#1d1d1f] placeholder-[#86868b] outline-none focus:bg-white focus:ring-2 focus:ring-[#007aff] transition-all"
               placeholder="Enter username"
               autoComplete="username"
               required
@@ -137,7 +137,7 @@ export default function AuthForm({ onSuccess, onStartRegistration }: AuthFormPro
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-[#f7f7f8] border border-gray-200 rounded-xl px-4 py-3 text-[#1d1d1f] placeholder-[#86868b] outline-none focus:border-[#007aff] focus:ring-2 focus:ring-[#007aff]/20"
+              className="w-full h-14 bg-black/5 rounded-xl px-4 text-[#1d1d1f] placeholder-[#86868b] outline-none focus:bg-white focus:ring-2 focus:ring-[#007aff] transition-all"
               placeholder="Enter password"
               autoComplete={isLogin ? "current-password" : "new-password"}
               required
@@ -153,7 +153,7 @@ export default function AuthForm({ onSuccess, onStartRegistration }: AuthFormPro
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-[#007aff] hover:bg-[#0066d6] disabled:opacity-60 disabled:cursor-not-allowed py-3 rounded-xl font-semibold text-white transition-colors"
+            className="w-full h-14 bg-[#007aff] hover:bg-[#0066d6] disabled:opacity-60 disabled:cursor-not-allowed rounded-xl font-semibold text-white transition-all flex items-center justify-center"
           >
             {loading ? "Please wait..." : isLogin ? "Log In" : "Create Account"}
           </button>
@@ -166,7 +166,7 @@ export default function AuthForm({ onSuccess, onStartRegistration }: AuthFormPro
               setError("");
               setSuggestRegister(false);
             }}
-            className="w-full mt-3 py-2.5 rounded-xl bg-[#f7f7f8] text-[#007aff] font-medium hover:bg-[#eef5ff] transition-colors"
+            className="w-full mt-3 h-14 rounded-xl bg-black/5 text-[#1d1d1f] font-medium hover:bg-black/10 transition-colors flex items-center justify-center"
           >
             No account yet? Register now
           </button>

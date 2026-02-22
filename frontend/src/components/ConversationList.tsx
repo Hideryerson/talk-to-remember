@@ -193,9 +193,9 @@ export default function ConversationList({ onSelect, onNew, greetingName }: Prop
   return (
     <div className="h-[100dvh] overflow-hidden bg-[#f7f7f8] flex flex-col max-w-lg mx-auto relative">
       {/* Header - Fixed */}
-      <header className="flex-shrink-0 z-10 bg-white/90 backdrop-blur-md border-b border-gray-200 px-4 py-4 safe-top sticky top-0">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold tracking-tight text-[#1d1d1f]">
+      <header className="flex-shrink-0 z-10 bg-[#f7f7f8]/90 backdrop-blur-md px-4 pt-12 pb-2 safe-top sticky top-0">
+        <div className="flex items-start justify-between">
+          <h1 className="text-3xl font-bold tracking-tight text-[#1d1d1f] mt-2 mb-1">
             {`Hi, ${(greetingName || "").trim() || "there"}`}
           </h1>
           <button
@@ -334,10 +334,10 @@ export default function ConversationList({ onSelect, onNew, greetingName }: Prop
       </div>
 
       {/* New Chat Button - Fixed */}
-      <div className="flex-shrink-0 z-10 sticky bottom-0 bg-white/90 backdrop-blur-md border-t border-gray-200 p-4 safe-bottom">
+      <div className="flex-shrink-0 z-10 sticky bottom-0 bg-[#f7f7f8]/90 backdrop-blur-md p-4 safe-bottom">
         <button
           onClick={onNew}
-          className="w-full bg-[#007aff] hover:bg-[#0066d6] active:bg-[#0055b3] py-3.5 rounded-xl font-semibold text-white transition-colors"
+          className="w-full h-14 bg-[#007aff] hover:bg-[#0066d6] active:bg-[#0055b3] rounded-xl font-semibold text-white transition-colors flex items-center justify-center"
         >
           New Conversation
         </button>
@@ -354,13 +354,13 @@ export default function ConversationList({ onSelect, onNew, greetingName }: Prop
             <div className="flex gap-3">
               <button
                 onClick={() => setDeleteConfirmId(null)}
-                className="flex-1 bg-[#f7f7f8] hover:bg-gray-200 py-3 rounded-xl font-medium text-[#1d1d1f] transition-colors"
+                className="flex-1 h-14 bg-[#f7f7f8] hover:bg-gray-200 rounded-xl font-medium text-[#1d1d1f] transition-colors flex items-center justify-center"
               >
                 Cancel
               </button>
               <button
                 onClick={() => handleDelete(deleteConfirmId)}
-                className="flex-1 bg-red-500 hover:bg-red-600 py-3 rounded-xl font-medium text-white transition-colors"
+                className="flex-1 h-14 bg-red-500 hover:bg-red-600 rounded-xl font-medium text-white transition-colors flex items-center justify-center"
               >
                 Delete
               </button>
