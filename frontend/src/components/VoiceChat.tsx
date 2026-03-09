@@ -113,9 +113,9 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
       if (!audioUnlocked) {
         log("Audio not unlocked for first message, showing prompt");
         setShowAudioPrompt(true);
-        pendingAssistantTextRef.current = "I just uploaded a photo from today. What do you see?";
+        pendingAssistantTextRef.current = "I just uploaded a photo. Can you help me remember roughly when this was taken?";
       } else {
-        doSendMessage("I just uploaded a photo from today. What do you see?");
+        doSendMessage("I just uploaded a photo. Can you help me remember roughly when this was taken?");
       }
     }
   }, [pendingFirstMessage, image, convoId]); // Remove audioUnlocked from deps to prevent re-triggers
@@ -681,7 +681,7 @@ export default function VoiceChat({ conversationId, profile, onBack }: VoiceChat
             className="border-2 border-dashed border-gray-600 rounded-2xl w-full max-w-sm h-64 flex flex-col items-center justify-center gap-3 hover:border-blue-500 active:bg-gray-900 transition-colors"
           >
             <span className="text-sm font-medium text-blue-300">Upload</span>
-            <span className="text-gray-400">Upload a photo from today</span>
+            <span className="text-gray-400">Upload a photo to begin</span>
             <span className="text-gray-600 text-xs">Supports JPEG, PNG, HEIC</span>
           </button>
         </div>

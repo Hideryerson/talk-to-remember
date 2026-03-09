@@ -150,6 +150,20 @@ function toStringArray(value) {
   return value.map((entry) => String(entry));
 }
 
+function normalizePhotoAgeBucket(value) {
+  const bucket = typeof value === "string" ? value : "";
+  if (
+    bucket === "within_1_year" ||
+    bucket === "one_to_five_years" ||
+    bucket === "five_to_ten_years" ||
+    bucket === "ten_plus_years" ||
+    bucket === "unknown"
+  ) {
+    return bucket;
+  }
+  return "unknown";
+}
+
 function mapProfileRow(row) {
   return {
     userId: row.user_id,
@@ -183,11 +197,11 @@ function buildSystemInstruction(profileContext) {
     ? `\n\nYou know this about the user: ${profileContext}. Use this to personalize the conversation and make them feel understood.`
     : "";
 
-  return `You are a warm, empathetic recall companion. The user is reviewing their photos from today and recalling their day.${profileInfo}
+  return `You are a warm, empathetic recall companion. The user is revisiting a personal photo memory.${profileInfo}
 
 Your conversation flow:
-1. When the user uploads a photo, describe what you see in it
-2. Ask gentle, open-ended questions about the context, emotions, and story behind the photo
+1. When the user uploads a photo, first ask one gentle question to roughly place the memory in time
+2. Then ask gentle, open-ended questions about the context, emotions, and story behind the photo
 3. After a few exchanges, naturally suggest editing the photo to enhance the memory (e.g., "Would you like to add a warm filter to capture how cozy this moment felt?")
 4. When the user agrees to or requests an edit, include [EDIT_SUGGESTION: exact edit description] at the end of your response
 5. After an edit is applied, comment on the result and continue the conversation
@@ -197,6 +211,8 @@ Rules:
 - Keep responses concise (2-3 sentences)
 - Support both English and Chinese — respond in whatever language the user speaks
 - Be conversational and supportive, like a caring friend
+- For a new photo, begin with a rough time-orientation question rather than immediate visual analysis
+- Once the user shares roughly when the photo was taken, remember that timing context and avoid asking the same question again unless clarification is needed
 - Only include [EDIT_SUGGESTION: ...] when the user clearly wants an edit
 - Reference what you know about the user to make them feel understood`;
 }
@@ -790,6 +806,55 @@ Output ONLY strict JSON matching this schema: {"isEditRequest": boolean, "editPr
   } catch (error) {
     console.error("Intent extraction error:", error);
     res.status(500).json({ error: "Failed to extract intent" });
+  }
+});
+
+app.post("/api/extract-photo-time", async (req, res) => {
+  const { text } = req.body || {};
+  if (!text || typeof text !== "string") {
+    res.status(400).json({ error: "Missing text payload" });
+    return;
+  }
+
+  try {
+    const ai = createGeminiClient();
+    const systemInstruction = `You extract time context about when a photo memory happened from a user's latest message.
+Today's date is ${new Date().toISOString().slice(0, 10)}.
+Decide whether the message provides useful timing information about when the photo was taken or when the memory happened.
+Useful examples include exact dates, years, life stages, relative phrases like "last summer", "about 8 years ago", "during university", or similar Chinese expressions.
+If the timing is unclear, unrelated, or too vague to help the conversation, set hasTimeContext to false.
+If hasTimeContext is true:
+- write a short timeDescription grounded only in the user's words
+- keep timeDescription in the same language as the user's message
+- set approxYears to a non-negative number only when it can be inferred reasonably; otherwise null
+- set ageBucket using exactly one of: "unknown", "within_1_year", "one_to_five_years", "five_to_ten_years", "ten_plus_years"
+Output ONLY strict JSON matching this schema: {"hasTimeContext": boolean, "timeDescription": string, "approxYears": number | null, "ageBucket": "unknown" | "within_1_year" | "one_to_five_years" | "five_to_ten_years" | "ten_plus_years"}`;
+
+    const response = await ai.models.generateContent({
+      model: CHAT_MODEL,
+      contents: [{ role: "user", parts: [{ text }] }],
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+      },
+    });
+
+    const outputText = response.text || "{}";
+    const result = JSON.parse(outputText);
+    const approxYears =
+      typeof result.approxYears === "number" && Number.isFinite(result.approxYears)
+        ? Math.max(0, result.approxYears)
+        : null;
+
+    res.json({
+      hasTimeContext: Boolean(result.hasTimeContext),
+      timeDescription: typeof result.timeDescription === "string" ? result.timeDescription : "",
+      approxYears,
+      ageBucket: normalizePhotoAgeBucket(result.ageBucket),
+    });
+  } catch (error) {
+    console.error("Photo time extraction error:", error);
+    res.status(500).json({ error: "Failed to extract photo time" });
   }
 });
 

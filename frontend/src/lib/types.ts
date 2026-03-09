@@ -26,6 +26,20 @@ export interface ChatMessage {
   text: string;
 }
 
+export type PhotoAgeBucket =
+  | "unknown"
+  | "within_1_year"
+  | "one_to_five_years"
+  | "five_to_ten_years"
+  | "ten_plus_years";
+
+export interface PhotoTimeContext {
+  sourceText: string;
+  timeDescription: string;
+  ageBucket: PhotoAgeBucket;
+  approxYears: number | null;
+}
+
 export interface Conversation {
   id: string;
   userId: string;

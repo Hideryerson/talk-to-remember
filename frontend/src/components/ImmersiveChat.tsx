@@ -14,7 +14,13 @@ import {
 import ControlBar from "./ControlBar";
 import FloatingTranscript from "./FloatingTranscript";
 import VersionGallery from "./VersionGallery";
-import type { ChatMessage, ImageVersion, UserProfile } from "@/lib/types";
+import type {
+  ChatMessage,
+  ImageVersion,
+  PhotoAgeBucket,
+  PhotoTimeContext,
+  UserProfile,
+} from "@/lib/types";
 
 interface ImmersiveChatProps {
   conversationId: string | null;
@@ -24,9 +30,51 @@ interface ImmersiveChatProps {
 
 type SessionState = "idle" | "connecting" | "listening" | "speaking" | "editing" | "paused";
 
+const PHOTO_TIME_UPDATE_WINDOW = 3;
+const PHOTO_TIME_RECOVERY_SCAN_LIMIT = 6;
+const VALID_PHOTO_AGE_BUCKETS = new Set<PhotoAgeBucket>([
+  "unknown",
+  "within_1_year",
+  "one_to_five_years",
+  "five_to_ten_years",
+  "ten_plus_years",
+]);
+const PHOTO_TIME_CUE_PATTERN =
+  /\b(\d{4}|year|years|month|months|week|weeks|day|days|ago|recent|recently|childhood|college|university|school|graduation|summer|winter|spring|fall|covid|pandemic|yesterday|today|last)\b|去年|前年|今年|小时候|童年|大学|高中|初中|小学|毕业|那年|那时候|当时|几年前|年前|最近|上周|上个月|去年夏天|疫情/iu;
+
 const DEBUG = true;
 function log(...args: any[]) {
   if (DEBUG) console.log("[ImmersiveChat]", ...args);
+}
+
+function shouldInspectPhotoTime(text: string, userMessageCount: number) {
+  return userMessageCount <= PHOTO_TIME_UPDATE_WINDOW || PHOTO_TIME_CUE_PATTERN.test(text);
+}
+
+function normalizePhotoTimeContext(payload: any): PhotoTimeContext | null {
+  if (!payload || !payload.hasTimeContext || typeof payload.timeDescription !== "string") {
+    return null;
+  }
+
+  const timeDescription = payload.timeDescription.trim();
+  if (!timeDescription) {
+    return null;
+  }
+
+  const ageBucket = VALID_PHOTO_AGE_BUCKETS.has(payload.ageBucket)
+    ? payload.ageBucket
+    : "unknown";
+  const approxYears =
+    typeof payload.approxYears === "number" && Number.isFinite(payload.approxYears)
+      ? Math.max(0, payload.approxYears)
+      : null;
+
+  return {
+    sourceText: typeof payload.sourceText === "string" ? payload.sourceText.trim() : "",
+    timeDescription,
+    ageBucket,
+    approxYears,
+  };
 }
 
 export default function ImmersiveChat({
@@ -62,6 +110,7 @@ export default function ImmersiveChat({
   const [pendingEditPrompt, setPendingEditPrompt] = useState<string | null>(null);
   const [showEditConfirm, setShowEditConfirm] = useState(false);
   const [queuedEditConfirm, setQueuedEditConfirm] = useState(false);
+  const [photoTimeContext, setPhotoTimeContext] = useState<PhotoTimeContext | null>(null);
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -80,6 +129,7 @@ export default function ImmersiveChat({
   const lastFinalUserTranscriptRef = useRef("");
   const isPausedRef = useRef(false);
   const pendingEditPromptRef = useRef<string | null>(null);
+  const photoTimeContextRef = useRef<PhotoTimeContext | null>(null);
 
   // Keep refs in sync
   useEffect(() => {
@@ -93,7 +143,20 @@ export default function ImmersiveChat({
     pendingAssistantTranscriptRef.current = pendingAssistantTranscript;
     isPausedRef.current = isPaused;
     pendingEditPromptRef.current = pendingEditPrompt;
-  }, [messages, imageVersions, convoId, currentImageIndex, isEditing, imageMimeType, awaitingFirstAssistantTurn, pendingAssistantTranscript, isPaused, pendingEditPrompt]);
+    photoTimeContextRef.current = photoTimeContext;
+  }, [
+    messages,
+    imageVersions,
+    convoId,
+    currentImageIndex,
+    isEditing,
+    imageMimeType,
+    awaitingFirstAssistantTurn,
+    pendingAssistantTranscript,
+    isPaused,
+    pendingEditPrompt,
+    photoTimeContext,
+  ]);
 
   const appendTranscriptEntry = useCallback((entry: LiveTranscriptEntry) => {
     if (!entry.isFinal) return;
@@ -125,6 +188,63 @@ export default function ImmersiveChat({
     }
   }, []);
 
+  const applyPhotoTimeContext = useCallback((nextContext: PhotoTimeContext | null) => {
+    setPhotoTimeContext(nextContext);
+    photoTimeContextRef.current = nextContext;
+  }, []);
+
+  const capturePhotoTimeContext = useCallback(async (text: string) => {
+    const normalized = text.replace(/\s+/g, " ").trim();
+    if (!normalized) return null;
+
+    try {
+      const response = await fetch(apiUrl("/api/extract-photo-time"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({ text: normalized }),
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      const result = await response.json();
+      const nextContext = normalizePhotoTimeContext({
+        ...result,
+        sourceText: normalized,
+      });
+
+      if (nextContext) {
+        applyPhotoTimeContext(nextContext);
+      }
+
+      return nextContext;
+    } catch (err) {
+      log("Photo time extraction failed:", err);
+      return null;
+    }
+  }, [applyPhotoTimeContext]);
+
+  const recoverPhotoTimeContext = useCallback(async (history: ChatMessage[]) => {
+    const userMessages = history
+      .filter((message) => message.role === "user")
+      .map((message) => message.text.replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .slice(0, PHOTO_TIME_RECOVERY_SCAN_LIMIT);
+
+    for (const text of userMessages) {
+      const recovered = await capturePhotoTimeContext(text);
+      if (recovered) {
+        return recovered;
+      }
+    }
+
+    return null;
+  }, [capturePhotoTimeContext]);
+
   // Decay mic level so listening waveform reflects real input and settles smoothly.
   useEffect(() => {
     if (sessionState !== "listening") {
@@ -155,6 +275,7 @@ export default function ImmersiveChat({
     if (conversationId) {
       hydrateConversation(conversationId);
     } else {
+      applyPhotoTimeContext(null);
       setHydrated(true);
     }
 
@@ -167,7 +288,7 @@ export default function ImmersiveChat({
         liveSessionRef.current.disconnect();
       }
     };
-  }, [clearPendingEditConfirmation, conversationId]);
+  }, [applyPhotoTimeContext, clearPendingEditConfirmation, conversationId]);
 
   // Check if this is a continuation (only for existing conversations, not new uploads)
   useEffect(() => {
@@ -243,6 +364,9 @@ export default function ImmersiveChat({
     const historyContext = isContinuation && messagesRef.current.length > 0
       ? `\n\nPrevious conversation context:\n${messagesRef.current.slice(-5).map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.text}`).join("\n")}`
       : "";
+    const photoTimeInstruction = photoTimeContextRef.current?.timeDescription
+      ? `\n\nKnown photo timing: ${photoTimeContextRef.current.timeDescription}. Keep this in mind throughout the conversation and avoid re-asking unless the user corrects it.`
+      : "";
 
     const welcomeInstruction = isContinuation
       ? "\n\nThe user is returning to continue a previous conversation. Welcome them back warmly and briefly recap what you were discussing before asking how you can help further."
@@ -250,10 +374,10 @@ export default function ImmersiveChat({
 
     const systemInstruction = `${DEFAULT_SYSTEM_INSTRUCTION}
 
-${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${welcomeInstruction}`;
+${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${photoTimeInstruction}${welcomeInstruction}`;
     const firstTurnPrompt = isContinuation
       ? "Welcome the user back in one short sentence, briefly recap what you discussed, and ask one follow-up question to continue."
-      : "Start by saying: 'Hi, thank you for sharing the photo with me.' Then mention one detail you notice and ask one short, gentle question.";
+      : "Start by saying: 'Hi, thank you for sharing this photo with me.' Then ask one short, gentle question to roughly place the memory in time, such as when the photo was taken. Do not begin by analyzing visual details yet.";
 
     const createSession = (credential: string, useProxy: boolean) => {
       const createdSession = new LiveSession(credential, {
@@ -312,42 +436,57 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       messagesRef.current = updated;
       appendTranscriptEntry({ role: "user", text: normalized, isFinal: true });
       saveConversation(updated);
+      const userMessageCount = updated.filter((message) => message.role === "user").length;
+      const asyncTasks: Promise<void>[] = [];
 
-      // Async intent extraction using Gemini 2.5 Pro
-      try {
-        const response = await fetch(apiUrl("/api/extract-edit-intent"), {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${getToken()}`,
-          },
-          body: JSON.stringify({ text: normalized }),
-        });
-        if (response.ok) {
-          const result = await response.json();
-          if (result.isEditRequest && result.editPrompt && result.editPrompt.trim()) {
-            const finalInstruction = result.editPrompt.trim();
-            setPendingEditPrompt(finalInstruction);
-            pendingEditPromptRef.current = finalInstruction;
-
-            // Queue the confirmation prompt to show after AI finishes speaking
-            setQueuedEditConfirm(true);
-
-            // To prevent stale closures and handle the case where the fetch completes 
-            // *after* the AI has already finished speaking, we use a functional state update
-            // to check the guaranteed current sessionState dynamically.
-            setSessionState((currentState) => {
-              if (!assistantAudioInCurrentTurnRef.current && currentState !== "speaking") {
-                setShowEditConfirm(true);
-                setQueuedEditConfirm(false);
-              }
-              return currentState;
-            });
-          }
-        }
-      } catch (err) {
-        log("Intent extraction failed:", err);
+      if (shouldInspectPhotoTime(normalized, userMessageCount)) {
+        asyncTasks.push(
+          (async () => {
+            await capturePhotoTimeContext(normalized);
+          })()
+        );
       }
+
+      asyncTasks.push(
+        (async () => {
+          try {
+            const response = await fetch(apiUrl("/api/extract-edit-intent"), {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${getToken()}`,
+              },
+              body: JSON.stringify({ text: normalized }),
+            });
+            if (response.ok) {
+              const result = await response.json();
+              if (result.isEditRequest && result.editPrompt && result.editPrompt.trim()) {
+                const finalInstruction = result.editPrompt.trim();
+                setPendingEditPrompt(finalInstruction);
+                pendingEditPromptRef.current = finalInstruction;
+
+                // Queue the confirmation prompt to show after AI finishes speaking
+                setQueuedEditConfirm(true);
+
+                // To prevent stale closures and handle the case where the fetch completes
+                // *after* the AI has already finished speaking, we use a functional state update
+                // to check the guaranteed current sessionState dynamically.
+                setSessionState((currentState) => {
+                  if (!assistantAudioInCurrentTurnRef.current && currentState !== "speaking") {
+                    setShowEditConfirm(true);
+                    setQueuedEditConfirm(false);
+                  }
+                  return currentState;
+                });
+              }
+            }
+          } catch (err) {
+            log("Intent extraction failed:", err);
+          }
+        })()
+      );
+
+      await Promise.allSettled(asyncTasks);
     };
 
     const mergeTranscriptChunk = (prev: string, chunk: string) => {
@@ -683,7 +822,12 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       lastFinalUserTranscriptRef.current = "";
       setSessionState("idle");
     }
-  }, [appendTranscriptEntry, clearPendingEditConfirmation, profile]);
+  }, [
+    appendTranscriptEntry,
+    capturePhotoTimeContext,
+    clearPendingEditConfirmation,
+    profile,
+  ]);
 
   const hydrateConversation = async (id: string) => {
     try {
@@ -703,6 +847,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       currentImageIndexRef.current = initialIndex;
       setMessages(convo.messages || []);
       messagesRef.current = convo.messages || [];
+      applyPhotoTimeContext(null);
       const transcriptHistory: LiveTranscriptEntry[] = (Array.isArray(convo.messages) ? convo.messages : [])
         .map((msg: ChatMessage): LiveTranscriptEntry | null => {
           const normalized = msg.text.replace(/\s+/g, " ").trim();
@@ -718,9 +863,11 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       clearPendingEditConfirmation();
       setPendingAssistantTranscript("");
       pendingAssistantTranscriptRef.current = "";
+      void recoverPhotoTimeContext(Array.isArray(convo.messages) ? convo.messages : []);
 
     } catch (err) {
       console.error("Hydrate error:", err);
+      applyPhotoTimeContext(null);
     } finally {
       setHydrated(true);
     }
@@ -852,6 +999,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       setTranscriptEntries([]);
       setIsPaused(false);
       isPausedRef.current = false;
+      applyPhotoTimeContext(null);
       clearUserTranscriptCommitTimer();
       clearPendingEditConfirmation();
       pendingUserTranscriptRef.current = "";

@@ -48,7 +48,7 @@ export default function MainPage() {
   useEffect(() => {
     if (pendingImageUpload && image) {
       setPendingImageUpload(false);
-      doSendMessage("I just uploaded a photo from today. What do you see?");
+      doSendMessage("I just uploaded a photo. Can you help me remember roughly when this was taken?");
     }
   }, [pendingImageUpload, image]);
 
@@ -371,7 +371,7 @@ export default function MainPage() {
               className="border-2 border-dashed border-gray-600 rounded-xl h-48 md:h-64 flex flex-col items-center justify-center gap-2 hover:border-blue-500 transition-colors active:bg-gray-900"
             >
               <span className="text-sm font-medium text-blue-300">Upload</span>
-              <span className="text-gray-400 text-sm">Upload a photo from today</span>
+              <span className="text-gray-400 text-sm">Upload a photo to begin</span>
             </button>
           ) : (
             <>
