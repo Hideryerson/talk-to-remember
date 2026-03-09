@@ -16,6 +16,8 @@ import FloatingTranscript from "./FloatingTranscript";
 import VersionGallery from "./VersionGallery";
 import type {
   ChatMessage,
+  PhotoGroundingDetails,
+  PhotoGroundingQuestionKey,
   ImageVersion,
   PhotoAgeBucket,
   PhotoTimeContext,
@@ -29,9 +31,16 @@ interface ImmersiveChatProps {
 }
 
 type SessionState = "idle" | "connecting" | "listening" | "speaking" | "editing" | "paused";
+type EditRiskTag = "face" | "body" | "landmark" | "signage" | "timestamp";
+type EditSeverity = "low" | "medium" | "high";
 
-const PHOTO_TIME_UPDATE_WINDOW = 3;
-const PHOTO_TIME_RECOVERY_SCAN_LIMIT = 6;
+interface EditAssessment {
+  riskTags: EditRiskTag[];
+  severity: EditSeverity;
+  reason: string;
+}
+
+const PHOTO_GROUNDING_RECOVERY_SCAN_LIMIT = 8;
 const VALID_PHOTO_AGE_BUCKETS = new Set<PhotoAgeBucket>([
   "unknown",
   "within_1_year",
@@ -39,16 +48,22 @@ const VALID_PHOTO_AGE_BUCKETS = new Set<PhotoAgeBucket>([
   "five_to_ten_years",
   "ten_plus_years",
 ]);
-const PHOTO_TIME_CUE_PATTERN =
-  /\b(\d{4}|year|years|month|months|week|weeks|day|days|ago|recent|recently|childhood|college|university|school|graduation|summer|winter|spring|fall|covid|pandemic|yesterday|today|last)\b|去年|前年|今年|小时候|童年|大学|高中|初中|小学|毕业|那年|那时候|当时|几年前|年前|最近|上周|上个月|去年夏天|疫情/iu;
-
+const GROUNDING_ORDER_KEYS: PhotoGroundingQuestionKey[] = [
+  "when",
+  "what",
+  "people_or_place",
+  "feelings",
+];
+const VALID_EDIT_RISK_TAGS = new Set<EditRiskTag>([
+  "face",
+  "body",
+  "landmark",
+  "signage",
+  "timestamp",
+]);
 const DEBUG = true;
 function log(...args: any[]) {
   if (DEBUG) console.log("[ImmersiveChat]", ...args);
-}
-
-function shouldInspectPhotoTime(text: string, userMessageCount: number) {
-  return userMessageCount <= PHOTO_TIME_UPDATE_WINDOW || PHOTO_TIME_CUE_PATTERN.test(text);
 }
 
 function normalizePhotoTimeContext(payload: any): PhotoTimeContext | null {
@@ -74,6 +89,324 @@ function normalizePhotoTimeContext(payload: any): PhotoTimeContext | null {
     timeDescription,
     ageBucket,
     approxYears,
+  };
+}
+
+function createEmptyGroundingDetails(): PhotoGroundingDetails {
+  return {
+    when: null,
+    what: null,
+    who: null,
+    where: null,
+    feelings: null,
+  };
+}
+
+function hasGroundingValue(value: string | null | undefined) {
+  return Boolean(value && value.trim());
+}
+
+function mergeGroundingDetails(
+  currentDetails: PhotoGroundingDetails,
+  nextDetails: Partial<PhotoGroundingDetails>
+): PhotoGroundingDetails {
+  return {
+    when: hasGroundingValue(nextDetails.when) ? nextDetails.when!.trim() : currentDetails.when,
+    what: hasGroundingValue(nextDetails.what) ? nextDetails.what!.trim() : currentDetails.what,
+    who: hasGroundingValue(nextDetails.who) ? nextDetails.who!.trim() : currentDetails.who,
+    where: hasGroundingValue(nextDetails.where) ? nextDetails.where!.trim() : currentDetails.where,
+    feelings: hasGroundingValue(nextDetails.feelings)
+      ? nextDetails.feelings!.trim()
+      : currentDetails.feelings,
+  };
+}
+
+function isGroundingReady(details: PhotoGroundingDetails) {
+  return (
+    hasGroundingValue(details.when) &&
+    hasGroundingValue(details.what) &&
+    hasGroundingValue(details.feelings) &&
+    (hasGroundingValue(details.who) || hasGroundingValue(details.where))
+  );
+}
+
+function hasAnyGrounding(details: PhotoGroundingDetails) {
+  return (
+    hasGroundingValue(details.when) ||
+    hasGroundingValue(details.what) ||
+    hasGroundingValue(details.who) ||
+    hasGroundingValue(details.where) ||
+    hasGroundingValue(details.feelings)
+  );
+}
+
+function getGroundingLabel(slot: PhotoGroundingQuestionKey) {
+  switch (slot) {
+    case "when":
+      return "when the photo was taken";
+    case "what":
+      return "what was happening in the moment";
+    case "people_or_place":
+      return "who is involved if people are present, otherwise where the moment happened";
+    case "feelings":
+      return "how the moment feels to the user";
+    default:
+      return slot;
+  }
+}
+
+function hashSeed(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function createSeededRandom(seedValue: string) {
+  let seed = hashSeed(seedValue) || 1;
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function getGroundingOrder(seedValue: string) {
+  const shuffled = [...GROUNDING_ORDER_KEYS];
+  const random = createSeededRandom(seedValue);
+
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+
+  return shuffled;
+}
+
+function getMissingGroundingSlots(
+  details: PhotoGroundingDetails,
+  order: PhotoGroundingQuestionKey[]
+) {
+  return order.filter((slot) => {
+    if (slot === "people_or_place") {
+      return !hasGroundingValue(details.who) && !hasGroundingValue(details.where);
+    }
+    return !hasGroundingValue(details[slot]);
+  });
+}
+
+function formatKnownGrounding(details: PhotoGroundingDetails) {
+  const parts: string[] = [];
+  if (hasGroundingValue(details.when)) parts.push(`when: ${details.when}`);
+  if (hasGroundingValue(details.what)) parts.push(`what happened: ${details.what}`);
+  if (hasGroundingValue(details.who)) parts.push(`who: ${details.who}`);
+  if (hasGroundingValue(details.where)) parts.push(`where: ${details.where}`);
+  if (hasGroundingValue(details.feelings)) parts.push(`feelings: ${details.feelings}`);
+  return parts.join(" | ");
+}
+
+function buildGroundingInstruction(
+  order: PhotoGroundingQuestionKey[],
+  details: PhotoGroundingDetails
+) {
+  const missing = getMissingGroundingSlots(details, order);
+  const preferredOrder = (missing.length > 0 ? missing : order)
+    .map(getGroundingLabel)
+    .join(" -> ");
+  const knownGrounding = formatKnownGrounding(details);
+
+  return `Grounding phase for this photo:
+- Before you proactively suggest editing, gather these grounding cues: when, what happened, feelings, and one people/place cue.
+- Use this preferred grounding order for this conversation when choosing the next missing question: ${preferredOrder}.
+- Ask exactly one grounding question at a time.
+- Skip any slot the user has already answered naturally.
+- For the people/place cue, ask who if the photo includes people. If no people are visible, ask where.
+- Do not proactively suggest edits until these grounding cues are sufficiently covered.
+${knownGrounding ? `- Known grounding details so far: ${knownGrounding}.` : "- No grounding details are confirmed yet."}`;
+}
+
+function getGroundingQuestionHint(slot: PhotoGroundingQuestionKey | null) {
+  if (!slot) {
+    return "the next helpful detail about the memory";
+  }
+  return getGroundingLabel(slot);
+}
+
+function detectEditRiskTags(prompt: string): EditRiskTag[] {
+  const normalized = prompt.toLowerCase();
+  const matches: EditRiskTag[] = [];
+  const patterns: Array<[EditRiskTag, RegExp]> = [
+    [
+      "face",
+      /\b(face|facial|eyes?|nose|mouth|smile|wrinkle|skin tone|look younger|look older)\b|脸|面部|五官|眼睛|鼻子|嘴|微笑|表情|皱纹/iu,
+    ],
+    [
+      "body",
+      /\b(body|posture|pose|outfit|clothes|clothing|weight|skin|arm|hand|hair)\b|身体|身材|姿势|衣服|穿着|发型|手臂|手|皮肤/iu,
+    ],
+    [
+      "landmark",
+      /\b(landmark|building|bridge|tower|monument|temple|church|stadium|skyline|station)\b|地标|建筑|桥|塔|纪念碑|寺|教堂|体育场|天际线|车站/iu,
+    ],
+    [
+      "signage",
+      /\b(sign|signage|text|words|logo|banner|poster|road sign|storefront|billboard|license plate)\b|招牌|标牌|路牌|文字|文本|海报|横幅|标志|车牌/iu,
+    ],
+    [
+      "timestamp",
+      /\b(timestamp|date|time stamp|year|clock|calendar|watermark|timecode)\b|时间戳|日期|年份|时钟|日历|水印|时间码/iu,
+    ],
+  ];
+
+  for (const [tag, pattern] of patterns) {
+    if (pattern.test(normalized)) {
+      matches.push(tag);
+    }
+  }
+
+  return matches;
+}
+
+function deriveSeverityFromRiskTags(riskTags: EditRiskTag[]): EditSeverity {
+  if (riskTags.includes("face")) return "high";
+  if (riskTags.length >= 2) return "high";
+  if (riskTags.length === 1) return "medium";
+  return "low";
+}
+
+function severityRank(severity: EditSeverity) {
+  switch (severity) {
+    case "high":
+      return 3;
+    case "medium":
+      return 2;
+    case "low":
+    default:
+      return 1;
+  }
+}
+
+function normalizeEditAssessment(payload: any, prompt: string): EditAssessment {
+  const remoteRiskTags = Array.isArray(payload?.riskTags)
+    ? payload.riskTags.filter((tag: unknown): tag is EditRiskTag =>
+        typeof tag === "string" && VALID_EDIT_RISK_TAGS.has(tag as EditRiskTag)
+      )
+    : [];
+  const localRiskTags = detectEditRiskTags(prompt);
+  const riskTags = Array.from(new Set<EditRiskTag>([...remoteRiskTags, ...localRiskTags]));
+  const derivedSeverity = deriveSeverityFromRiskTags(riskTags);
+  const remoteSeverity =
+    payload?.severity === "high" || payload?.severity === "medium" || payload?.severity === "low"
+      ? payload.severity
+      : "low";
+  const severity =
+    severityRank(remoteSeverity) >= severityRank(derivedSeverity) ? remoteSeverity : derivedSeverity;
+  const reason =
+    typeof payload?.reason === "string" && payload.reason.trim()
+      ? payload.reason.trim()
+      : riskTags.length > 0
+        ? `This edit may change identity or memory cues that help the photo stay recognizable.`
+        : "";
+
+  return { riskTags, severity, reason };
+}
+
+function getRiskTagLabel(tag: EditRiskTag) {
+  switch (tag) {
+    case "face":
+      return "Face";
+    case "body":
+      return "Body or appearance";
+    case "landmark":
+      return "Landmark or place cue";
+    case "signage":
+      return "Signage or text cue";
+    case "timestamp":
+      return "Date or time cue";
+    default:
+      return tag;
+  }
+}
+
+function getRiskTagDescription(tag: EditRiskTag) {
+  switch (tag) {
+    case "face":
+      return "Faces are strong identity anchors and often shape how people remember who was there.";
+    case "body":
+      return "Changes to appearance, clothing, or posture can shift how someone is remembered.";
+    case "landmark":
+      return "Place details can anchor where this memory happened.";
+    case "signage":
+      return "Text and signs can preserve event and location cues.";
+    case "timestamp":
+      return "Dates or time marks can help anchor when this happened.";
+    default:
+      return "";
+  }
+}
+
+function isOlderPhoto(ageBucket: PhotoAgeBucket | undefined) {
+  return ageBucket === "five_to_ten_years" || ageBucket === "ten_plus_years";
+}
+
+function buildMemoryAnchorSummary(
+  photoTimeContext: PhotoTimeContext | null,
+  details: PhotoGroundingDetails
+) {
+  const anchors: string[] = [];
+  if (photoTimeContext?.timeDescription) {
+    anchors.push(`timing: ${photoTimeContext.timeDescription}`);
+  }
+  if (hasGroundingValue(details.what)) {
+    anchors.push(`moment: ${details.what}`);
+  }
+  if (hasGroundingValue(details.who)) {
+    anchors.push(`people: ${details.who}`);
+  } else if (hasGroundingValue(details.where)) {
+    anchors.push(`place: ${details.where}`);
+  }
+  if (hasGroundingValue(details.feelings)) {
+    anchors.push(`feeling: ${details.feelings}`);
+  }
+  return anchors;
+}
+
+function buildAgeReminder(photoTimeContext: PhotoTimeContext | null) {
+  if (!photoTimeContext) return null;
+  if (typeof photoTimeContext.approxYears === "number" && photoTimeContext.approxYears >= 5) {
+    return `This seems to be a photo from about ${photoTimeContext.approxYears} years ago. Older memories can rely on visual cues that edits may change.`;
+  }
+  if (isOlderPhoto(photoTimeContext.ageBucket) && photoTimeContext.timeDescription) {
+    return `This seems to be a photo from ${photoTimeContext.timeDescription}. Older memories can rely on visual cues that edits may change.`;
+  }
+  return null;
+}
+
+function buildEditModalCopy(assessment: EditAssessment, olderMemory: boolean) {
+  if (assessment.severity === "high") {
+    return {
+      title: "High-Impact Edit",
+      body: olderMemory
+        ? "This edit could change identity or key memory cues in an older photo."
+        : "This edit could change identity or key memory cues in the photo.",
+    };
+  }
+
+  if (assessment.severity === "medium") {
+    return {
+      title: "Review This Edit",
+      body: olderMemory
+        ? "This edit may remove cues that help you recognize an older memory."
+        : "This edit may remove cues that help the photo stay grounded in time or place.",
+    };
+  }
+
+  return {
+    title: "Confirm Edit",
+    body: "You can refine the instruction below before applying it to the active photo.",
   };
 }
 
@@ -110,7 +443,17 @@ export default function ImmersiveChat({
   const [pendingEditPrompt, setPendingEditPrompt] = useState<string | null>(null);
   const [showEditConfirm, setShowEditConfirm] = useState(false);
   const [queuedEditConfirm, setQueuedEditConfirm] = useState(false);
+  const [pendingEditAssessment, setPendingEditAssessment] = useState<EditAssessment>({
+    riskTags: [],
+    severity: "low",
+    reason: "",
+  });
+  const [editRationale, setEditRationale] = useState("");
+  const [isAssessingEdit, setIsAssessingEdit] = useState(false);
   const [photoTimeContext, setPhotoTimeContext] = useState<PhotoTimeContext | null>(null);
+  const [photoGroundingDetails, setPhotoGroundingDetails] = useState<PhotoGroundingDetails>(
+    createEmptyGroundingDetails()
+  );
 
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -129,7 +472,13 @@ export default function ImmersiveChat({
   const lastFinalUserTranscriptRef = useRef("");
   const isPausedRef = useRef(false);
   const pendingEditPromptRef = useRef<string | null>(null);
+  const pendingEditAssessmentRef = useRef<EditAssessment>({
+    riskTags: [],
+    severity: "low",
+    reason: "",
+  });
   const photoTimeContextRef = useRef<PhotoTimeContext | null>(null);
+  const photoGroundingDetailsRef = useRef<PhotoGroundingDetails>(createEmptyGroundingDetails());
 
   // Keep refs in sync
   useEffect(() => {
@@ -143,7 +492,9 @@ export default function ImmersiveChat({
     pendingAssistantTranscriptRef.current = pendingAssistantTranscript;
     isPausedRef.current = isPaused;
     pendingEditPromptRef.current = pendingEditPrompt;
+    pendingEditAssessmentRef.current = pendingEditAssessment;
     photoTimeContextRef.current = photoTimeContext;
+    photoGroundingDetailsRef.current = photoGroundingDetails;
   }, [
     messages,
     imageVersions,
@@ -155,7 +506,9 @@ export default function ImmersiveChat({
     pendingAssistantTranscript,
     isPaused,
     pendingEditPrompt,
+    pendingEditAssessment,
     photoTimeContext,
+    photoGroundingDetails,
   ]);
 
   const appendTranscriptEntry = useCallback((entry: LiveTranscriptEntry) => {
@@ -183,22 +536,100 @@ export default function ImmersiveChat({
     setShowEditConfirm(false);
     setPendingEditPrompt(null);
     pendingEditPromptRef.current = null;
+    setPendingEditAssessment({ riskTags: [], severity: "low", reason: "" });
+    pendingEditAssessmentRef.current = { riskTags: [], severity: "low", reason: "" };
+    setEditRationale("");
+    setIsAssessingEdit(false);
     if (notifyBackend) {
       liveSessionRef.current?.cancelEditConfirm();
     }
   }, []);
+
+  const applyPendingEditReview = useCallback((instruction: string, payload?: any) => {
+    const normalizedInstruction = instruction.trim();
+    const assessment = normalizeEditAssessment(payload, normalizedInstruction);
+    setPendingEditPrompt(normalizedInstruction);
+    pendingEditPromptRef.current = normalizedInstruction;
+    setPendingEditAssessment(assessment);
+    pendingEditAssessmentRef.current = assessment;
+    setEditRationale("");
+    return assessment;
+  }, []);
+
+  const refineEditAssessment = useCallback(async (instruction: string) => {
+    const normalizedInstruction = instruction.trim();
+    if (!normalizedInstruction) return;
+
+    setIsAssessingEdit(true);
+    try {
+      const response = await fetch(apiUrl("/api/extract-edit-intent"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({ text: normalizedInstruction }),
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const result = await response.json();
+      if (pendingEditPromptRef.current?.trim() !== normalizedInstruction) {
+        return;
+      }
+      const assessment = normalizeEditAssessment(result, normalizedInstruction);
+      setPendingEditAssessment(assessment);
+      pendingEditAssessmentRef.current = assessment;
+    } catch (err) {
+      log("Edit assessment refinement failed:", err);
+    } finally {
+      setIsAssessingEdit(false);
+    }
+  }, []);
+
+  const queueEditConfirmation = useCallback(
+    (instruction: string, options?: { payload?: any; showImmediately?: boolean; refine?: boolean }) => {
+      const normalizedInstruction = instruction.trim();
+      if (!normalizedInstruction) return;
+
+      applyPendingEditReview(normalizedInstruction, options?.payload);
+      if (options?.showImmediately) {
+        setShowEditConfirm(true);
+        setQueuedEditConfirm(false);
+      } else {
+        setQueuedEditConfirm(true);
+      }
+
+      if (options?.refine) {
+        void refineEditAssessment(normalizedInstruction);
+      }
+    },
+    [applyPendingEditReview, refineEditAssessment]
+  );
 
   const applyPhotoTimeContext = useCallback((nextContext: PhotoTimeContext | null) => {
     setPhotoTimeContext(nextContext);
     photoTimeContextRef.current = nextContext;
   }, []);
 
-  const capturePhotoTimeContext = useCallback(async (text: string) => {
+  const applyPhotoGroundingDetails = useCallback((nextDetails: PhotoGroundingDetails) => {
+    setPhotoGroundingDetails(nextDetails);
+    photoGroundingDetailsRef.current = nextDetails;
+  }, []);
+
+  const resetPhotoGroundingState = useCallback(() => {
+    applyPhotoTimeContext(null);
+    applyPhotoGroundingDetails(createEmptyGroundingDetails());
+  }, [applyPhotoGroundingDetails, applyPhotoTimeContext]);
+
+  const captureGroundingContext = useCallback(async (text: string) => {
     const normalized = text.replace(/\s+/g, " ").trim();
     if (!normalized) return null;
 
     try {
-      const response = await fetch(apiUrl("/api/extract-photo-time"), {
+      const response = await fetch(apiUrl("/api/extract-photo-grounding"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -212,38 +643,53 @@ export default function ImmersiveChat({
       }
 
       const result = await response.json();
-      const nextContext = normalizePhotoTimeContext({
+      const nextTimeContext = normalizePhotoTimeContext({
         ...result,
         sourceText: normalized,
       });
-
-      if (nextContext) {
-        applyPhotoTimeContext(nextContext);
+      if (nextTimeContext) {
+        applyPhotoTimeContext(nextTimeContext);
       }
 
-      return nextContext;
+      const nextGroundingDetails = mergeGroundingDetails(photoGroundingDetailsRef.current, {
+        when:
+          typeof result.when === "string" && result.when.trim()
+            ? result.when.trim()
+            : nextTimeContext?.timeDescription || null,
+        what: typeof result.what === "string" ? result.what.trim() : null,
+        who: typeof result.who === "string" ? result.who.trim() : null,
+        where: typeof result.where === "string" ? result.where.trim() : null,
+        feelings: typeof result.feelings === "string" ? result.feelings.trim() : null,
+      });
+
+      if (hasAnyGrounding(nextGroundingDetails)) {
+        applyPhotoGroundingDetails(nextGroundingDetails);
+      }
+
+      return {
+        photoTimeContext: nextTimeContext,
+        photoGroundingDetails: nextGroundingDetails,
+      };
     } catch (err) {
-      log("Photo time extraction failed:", err);
+      log("Grounding extraction failed:", err);
       return null;
     }
-  }, [applyPhotoTimeContext]);
+  }, [applyPhotoGroundingDetails, applyPhotoTimeContext]);
 
-  const recoverPhotoTimeContext = useCallback(async (history: ChatMessage[]) => {
-    const userMessages = history
+  const recoverGroundingContext = useCallback(async (history: ChatMessage[]) => {
+    const combinedHistory = history
       .filter((message) => message.role === "user")
       .map((message) => message.text.replace(/\s+/g, " ").trim())
       .filter(Boolean)
-      .slice(0, PHOTO_TIME_RECOVERY_SCAN_LIMIT);
+      .slice(0, PHOTO_GROUNDING_RECOVERY_SCAN_LIMIT)
+      .join("\n");
 
-    for (const text of userMessages) {
-      const recovered = await capturePhotoTimeContext(text);
-      if (recovered) {
-        return recovered;
-      }
+    if (!combinedHistory) {
+      return null;
     }
 
-    return null;
-  }, [capturePhotoTimeContext]);
+    return captureGroundingContext(combinedHistory);
+  }, [captureGroundingContext]);
 
   // Decay mic level so listening waveform reflects real input and settles smoothly.
   useEffect(() => {
@@ -275,7 +721,7 @@ export default function ImmersiveChat({
     if (conversationId) {
       hydrateConversation(conversationId);
     } else {
-      applyPhotoTimeContext(null);
+      resetPhotoGroundingState();
       setHydrated(true);
     }
 
@@ -288,7 +734,7 @@ export default function ImmersiveChat({
         liveSessionRef.current.disconnect();
       }
     };
-  }, [applyPhotoTimeContext, clearPendingEditConfirmation, conversationId]);
+  }, [clearPendingEditConfirmation, conversationId, resetPhotoGroundingState]);
 
   // Check if this is a continuation (only for existing conversations, not new uploads)
   useEffect(() => {
@@ -359,6 +805,16 @@ export default function ImmersiveChat({
     const profileContext = profile
       ? `User name: ${profile.name}. Hobbies: ${profile.hobbies.join(", ")}. About: ${profile.selfIntro}. Past sessions: ${profile.conversationSummaries.slice(-3).join(" | ")}`
       : "";
+    const groundingOrder = getGroundingOrder(convoIdRef.current || conversationId || "recall");
+    const missingGroundingSlots = getMissingGroundingSlots(
+      photoGroundingDetailsRef.current,
+      groundingOrder
+    );
+    const nextGroundingSlot = missingGroundingSlots[0] || null;
+    const groundingInstruction = buildGroundingInstruction(
+      groundingOrder,
+      photoGroundingDetailsRef.current
+    );
 
     // Build conversation history for continuation
     const historyContext = isContinuation && messagesRef.current.length > 0
@@ -374,10 +830,13 @@ export default function ImmersiveChat({
 
     const systemInstruction = `${DEFAULT_SYSTEM_INSTRUCTION}
 
-${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${photoTimeInstruction}${welcomeInstruction}`;
+${groundingInstruction}
+${profileContext ? `\n\nAbout this user: ${profileContext}` : ""}${historyContext}${photoTimeInstruction}${welcomeInstruction}`;
     const firstTurnPrompt = isContinuation
-      ? "Welcome the user back in one short sentence, briefly recap what you discussed, and ask one follow-up question to continue."
-      : "Start by saying: 'Hi, thank you for sharing this photo with me.' Then ask one short, gentle question to roughly place the memory in time, such as when the photo was taken. Do not begin by analyzing visual details yet.";
+      ? isGroundingReady(photoGroundingDetailsRef.current)
+        ? "Welcome the user back in one short sentence, briefly recap what you discussed, and ask one follow-up question to continue naturally."
+        : `Welcome the user back in one short sentence. Then ask one gentle question about ${getGroundingQuestionHint(nextGroundingSlot)}. Ask only one question and do not suggest editing yet.`
+      : `Start by saying: 'Hi, thank you for sharing this photo with me.' Then ask one short, gentle question about ${getGroundingQuestionHint(nextGroundingSlot)}. Ask only one question and do not suggest editing yet.`;
 
     const createSession = (credential: string, useProxy: boolean) => {
       const createdSession = new LiveSession(credential, {
@@ -436,13 +895,12 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       messagesRef.current = updated;
       appendTranscriptEntry({ role: "user", text: normalized, isFinal: true });
       saveConversation(updated);
-      const userMessageCount = updated.filter((message) => message.role === "user").length;
       const asyncTasks: Promise<void>[] = [];
 
-      if (shouldInspectPhotoTime(normalized, userMessageCount)) {
+      if (!isGroundingReady(photoGroundingDetailsRef.current)) {
         asyncTasks.push(
           (async () => {
-            await capturePhotoTimeContext(normalized);
+            await captureGroundingContext(normalized);
           })()
         );
       }
@@ -462,11 +920,9 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
               const result = await response.json();
               if (result.isEditRequest && result.editPrompt && result.editPrompt.trim()) {
                 const finalInstruction = result.editPrompt.trim();
-                setPendingEditPrompt(finalInstruction);
-                pendingEditPromptRef.current = finalInstruction;
-
-                // Queue the confirmation prompt to show after AI finishes speaking
-                setQueuedEditConfirm(true);
+                queueEditConfirmation(finalInstruction, {
+                  payload: result,
+                });
 
                 // To prevent stale closures and handle the case where the fetch completes
                 // *after* the AI has already finished speaking, we use a functional state update
@@ -625,11 +1081,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         if (event.type === "REQUIRE_EDIT_CONFIRM") {
           const instruction = event.instruction?.trim();
           if (!instruction) return;
-          setPendingEditPrompt(instruction);
-          pendingEditPromptRef.current = instruction;
-
-          // Instead of showing immediately, queue it to show when playback completes
-          setQueuedEditConfirm(true);
+          queueEditConfirmation(instruction, { refine: true });
 
           setIsEditing(false);
           isEditingRef.current = false;
@@ -651,7 +1103,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
           setIsEditing(false);
           isEditingRef.current = false;
           const instruction =
-            (event.instruction || pendingEditPromptRef.current || "").trim();
+            (pendingEditPromptRef.current || event.instruction || "").trim();
           if (event.imageBase64 && instruction) {
             applyEditedImageVersion(
               event.imageBase64,
@@ -674,11 +1126,12 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         if (event.type === "EDIT_FAILED") {
           setIsEditing(false);
           isEditingRef.current = false;
-          const instruction = event.instruction?.trim();
+          const instruction = (pendingEditPromptRef.current || event.instruction || "").trim();
           if (instruction) {
-            setPendingEditPrompt(instruction);
-            pendingEditPromptRef.current = instruction;
-            setShowEditConfirm(true);
+            queueEditConfirmation(instruction, {
+              showImmediately: true,
+              refine: true,
+            });
           }
           if (event.error) {
             setLiveError(event.error);
@@ -824,9 +1277,11 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     }
   }, [
     appendTranscriptEntry,
-    capturePhotoTimeContext,
+    captureGroundingContext,
     clearPendingEditConfirmation,
+    conversationId,
     profile,
+    queueEditConfirmation,
   ]);
 
   const hydrateConversation = async (id: string) => {
@@ -847,7 +1302,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       currentImageIndexRef.current = initialIndex;
       setMessages(convo.messages || []);
       messagesRef.current = convo.messages || [];
-      applyPhotoTimeContext(null);
+      resetPhotoGroundingState();
       const transcriptHistory: LiveTranscriptEntry[] = (Array.isArray(convo.messages) ? convo.messages : [])
         .map((msg: ChatMessage): LiveTranscriptEntry | null => {
           const normalized = msg.text.replace(/\s+/g, " ").trim();
@@ -863,11 +1318,11 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       clearPendingEditConfirmation();
       setPendingAssistantTranscript("");
       pendingAssistantTranscriptRef.current = "";
-      void recoverPhotoTimeContext(Array.isArray(convo.messages) ? convo.messages : []);
+      void recoverGroundingContext(Array.isArray(convo.messages) ? convo.messages : []);
 
     } catch (err) {
       console.error("Hydrate error:", err);
-      applyPhotoTimeContext(null);
+      resetPhotoGroundingState();
     } finally {
       setHydrated(true);
     }
@@ -999,7 +1454,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       setTranscriptEntries([]);
       setIsPaused(false);
       isPausedRef.current = false;
-      applyPhotoTimeContext(null);
+      resetPhotoGroundingState();
       clearUserTranscriptCommitTimer();
       clearPendingEditConfirmation();
       pendingUserTranscriptRef.current = "";
@@ -1152,6 +1607,13 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     const editPrompt = pendingEditPromptRef.current?.trim();
     const session = liveSessionRef.current;
     if (!editPrompt || !session) return;
+    const rationale = editRationale.trim();
+    const olderMemory = isOlderPhoto(photoTimeContextRef.current?.ageBucket);
+    const requiresRationale =
+      pendingEditAssessmentRef.current.severity !== "low" || olderMemory;
+    if (requiresRationale && !rationale) {
+      return;
+    }
 
     const activeVersion = imageVersionsRef.current[currentImageIndexRef.current];
     if (!activeVersion?.dataUrl?.includes(",")) {
@@ -1160,6 +1622,24 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
     }
 
     const base64 = activeVersion.dataUrl.split(",")[1];
+    const memoryAnchors = buildMemoryAnchorSummary(
+      photoTimeContextRef.current,
+      photoGroundingDetailsRef.current
+    );
+    const finalEditPrompt = [
+      editPrompt,
+      rationale
+        ? `Additional guidance: Prioritize this intention while editing: ${rationale}.`
+        : null,
+      memoryAnchors.length > 0
+        ? `Additional guidance: Preserve other recognizable memory anchors where possible: ${memoryAnchors.join(
+            "; "
+          )}.`
+        : null,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+
     setShowEditConfirm(false);
     setIsEditing(true);
     isEditingRef.current = true;
@@ -1172,7 +1652,7 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
 
     clearUserTranscriptCommitTimer();
     pendingUserTranscriptRef.current = "";
-    session.confirmEdit(editPrompt, base64, imageMimeTypeRef.current);
+    session.confirmEdit(finalEditPrompt, base64, imageMimeTypeRef.current);
     const micReady = await session.startAudioInput();
     if (!micReady) {
       setLiveError("Microphone failed to restart for continued conversation.");
@@ -1236,6 +1716,14 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
       sessionState === "speaking" ||
       sessionState === "listening" ||
       awaitingFirstAssistantTurn);
+  const olderMemoryEdit = isOlderPhoto(photoTimeContext?.ageBucket);
+  const editModalCopy = buildEditModalCopy(pendingEditAssessment, olderMemoryEdit);
+  const ageReminder = buildAgeReminder(photoTimeContext);
+  const memoryAnchorPreview = buildMemoryAnchorSummary(photoTimeContext, photoGroundingDetails);
+  const rationaleRequired = pendingEditAssessment.severity !== "low" || olderMemoryEdit;
+  const confirmEditDisabled =
+    !pendingEditPrompt?.trim() ||
+    (rationaleRequired && editRationale.trim().length === 0);
 
   // Loading state - with SF Symbol style icon
   if (!hydrated) {
@@ -1390,17 +1878,92 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
         <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[88vw] max-w-md">
           <div className="bg-white/40 backdrop-blur-2xl border border-white/50 rounded-3xl shadow-xl overflow-hidden p-1 shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
             <div className="p-5 pb-4">
-              <h3 className="text-lg font-semibold text-[#1d1d1f] mb-1">Confirm Edit</h3>
+              <h3 className="text-lg font-semibold text-[#1d1d1f] mb-1">{editModalCopy.title}</h3>
               <p className="text-sm text-[#1d1d1f]/80 mt-1">
-                You can manually refine the edit instruction below before applying it to the active photo.
+                {editModalCopy.body}
               </p>
+              {pendingEditAssessment.reason ? (
+                <p className="text-sm text-[#1d1d1f]/70 mt-3">{pendingEditAssessment.reason}</p>
+              ) : null}
             </div>
-            <div className="px-5 mb-5 relative group">
+
+            {(ageReminder || memoryAnchorPreview.length > 0) && (
+              <div className="px-5 pb-4 space-y-3">
+                {ageReminder ? (
+                  <div className="rounded-2xl bg-amber-50/90 border border-amber-200 px-4 py-3 text-sm text-amber-900">
+                    {ageReminder}
+                  </div>
+                ) : null}
+                {memoryAnchorPreview.length > 0 ? (
+                  <div className="rounded-2xl bg-white/55 border border-white/70 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#1d1d1f]/55 mb-2">
+                      Memory Anchors
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {memoryAnchorPreview.map((anchor) => (
+                        <span
+                          key={anchor}
+                          className="px-3 py-1.5 rounded-full bg-[#1d1d1f]/6 text-[#1d1d1f]/80 text-xs"
+                        >
+                          {anchor}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            {pendingEditAssessment.riskTags.length > 0 && (
+              <div className="px-5 pb-4 space-y-2">
+                {pendingEditAssessment.riskTags.map((tag) => (
+                  <div
+                    key={tag}
+                    className="rounded-2xl bg-white/55 border border-white/70 px-4 py-3"
+                  >
+                    <p className="text-sm font-medium text-[#1d1d1f]">{getRiskTagLabel(tag)}</p>
+                    <p className="text-xs text-[#1d1d1f]/70 mt-1">{getRiskTagDescription(tag)}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="px-5 mb-4 relative group">
+              <label className="block text-xs font-semibold uppercase tracking-[0.08em] text-[#1d1d1f]/55 mb-2">
+                Edit Instruction
+              </label>
               <textarea
                 value={pendingEditPrompt}
-                onChange={(e) => setPendingEditPrompt(e.target.value)}
+                onChange={(e) => {
+                  const nextPrompt = e.target.value;
+                  setPendingEditPrompt(nextPrompt);
+                  pendingEditPromptRef.current = nextPrompt;
+                  const nextAssessment = normalizeEditAssessment(undefined, nextPrompt);
+                  setPendingEditAssessment(nextAssessment);
+                  pendingEditAssessmentRef.current = nextAssessment;
+                }}
                 className="w-full h-24 p-4 rounded-2xl bg-white/50 border border-white/60 text-[#1d1d1f] text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#007aff]/50 transition-shadow pointer-events-auto shadow-inner"
               />
+              {isAssessingEdit ? (
+                <p className="text-xs text-[#1d1d1f]/50 mt-2">Updating guidance...</p>
+              ) : null}
+            </div>
+
+            <div className="px-5 mb-5 relative group">
+              <label className="block text-xs font-semibold uppercase tracking-[0.08em] text-[#1d1d1f]/55 mb-2">
+                {rationaleRequired ? "What should this edit preserve?*" : "What should this edit preserve or express?"}
+              </label>
+              <textarea
+                value={editRationale}
+                onChange={(e) => setEditRationale(e.target.value)}
+                placeholder="e.g. Keep my mother's face recognizable and preserve the graduation banner."
+                className="w-full h-20 p-4 rounded-2xl bg-white/50 border border-white/60 text-[#1d1d1f] text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#007aff]/50 transition-shadow pointer-events-auto shadow-inner"
+              />
+              <p className="text-xs text-[#1d1d1f]/55 mt-2">
+                {rationaleRequired
+                  ? "Required for higher-impact edits or older memories."
+                  : "Optional, but it helps the edit stay aligned with the memory."}
+              </p>
             </div>
 
             <div className="flex gap-2 p-2">
@@ -1414,7 +1977,8 @@ ${profileContext ? `About this user: ${profileContext}` : ""}${historyContext}${
                 onClick={() => {
                   void handleConfirmEdit();
                 }}
-                className="flex-1 py-3.5 bg-[#007aff] hover:bg-[#0066d6] text-white rounded-2xl transition-colors font-medium shadow-sm"
+                disabled={confirmEditDisabled}
+                className="flex-1 py-3.5 bg-[#007aff] hover:bg-[#0066d6] disabled:bg-[#007aff]/45 disabled:cursor-not-allowed text-white rounded-2xl transition-colors font-medium shadow-sm"
               >
                 Confirm
               </button>

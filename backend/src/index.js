@@ -164,6 +164,21 @@ function normalizePhotoAgeBucket(value) {
   return "unknown";
 }
 
+function normalizeEditRiskTags(value) {
+  const allowed = new Set(["face", "body", "landmark", "signage", "timestamp"]);
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => (typeof entry === "string" ? entry : ""))
+    .filter((entry) => allowed.has(entry));
+}
+
+function normalizeEditSeverity(value) {
+  if (value === "high" || value === "medium" || value === "low") {
+    return value;
+  }
+  return "low";
+}
+
 function mapProfileRow(row) {
   return {
     userId: row.user_id,
@@ -200,19 +215,22 @@ function buildSystemInstruction(profileContext) {
   return `You are a warm, empathetic recall companion. The user is revisiting a personal photo memory.${profileInfo}
 
 Your conversation flow:
-1. When the user uploads a photo, first ask one gentle question to roughly place the memory in time
-2. Then ask gentle, open-ended questions about the context, emotions, and story behind the photo
-3. After a few exchanges, naturally suggest editing the photo to enhance the memory (e.g., "Would you like to add a warm filter to capture how cozy this moment felt?")
-4. When the user agrees to or requests an edit, include [EDIT_SUGGESTION: exact edit description] at the end of your response
-5. After an edit is applied, comment on the result and continue the conversation
-6. The session is about 5 minutes — keep things flowing naturally
+1. Before proactively suggesting editing, gather grounding cues about when the photo was taken, what was happening, and how the moment felt
+2. Also gather one grounding cue about who is involved if people are present, or where it happened if no people are present
+3. Ask only one grounding question at a time and skip anything the user already shared naturally
+4. Once those grounding cues are covered, naturally suggest editing the photo to enhance the memory (e.g., "Would you like to add a warm filter to capture how cozy this moment felt?")
+5. When the user agrees to or requests an edit, include [EDIT_SUGGESTION: exact edit description] at the end of your response
+6. After an edit is applied, comment on the result and continue the conversation
+7. The session is about 5 minutes — keep things flowing naturally
 
 Rules:
 - Keep responses concise (2-3 sentences)
 - Support both English and Chinese — respond in whatever language the user speaks
 - Be conversational and supportive, like a caring friend
-- For a new photo, begin with a rough time-orientation question rather than immediate visual analysis
+- For a new photo, begin with one grounding question rather than immediate visual analysis
+- Vary the grounding question order naturally from one conversation to another
 - Once the user shares roughly when the photo was taken, remember that timing context and avoid asking the same question again unless clarification is needed
+- Do not proactively suggest edits until the grounding cues are sufficiently covered
 - Only include [EDIT_SUGGESTION: ...] when the user clearly wants an edit
 - Reference what you know about the user to make them feel understood`;
 }
@@ -784,9 +802,19 @@ app.post("/api/extract-edit-intent", async (req, res) => {
     const systemInstruction = `You extract image editing intents from user transcripts.
 The user is speaking to a voice assistant about a photo they are looking at.
 Determine if the user's latest message contains a request to edit, modify, filter, or alter the photo.
-If YES, set isEditRequest to true, and extract their core instruction into editPrompt.
-If NO, set isEditRequest to false, and leave editPrompt empty.
-Output ONLY strict JSON matching this schema: {"isEditRequest": boolean, "editPrompt": string}`;
+If YES:
+- set isEditRequest to true
+- extract the core instruction into editPrompt
+- assess whether the edit touches any of these risky memory cues: face, body, landmark, signage, timestamp
+- set severity to "high", "medium", or "low"
+- write one short reason explaining the main cue at risk
+Risk guidance:
+- face changes are usually high risk
+- body changes are usually medium risk unless they strongly change identity
+- landmark, signage, or timestamp changes are usually medium risk because they can remove place/time cues
+- if multiple risky cues are involved, prefer the higher severity
+If NO, set isEditRequest to false, leave editPrompt empty, riskTags empty, severity "low", and reason empty.
+Output ONLY strict JSON matching this schema: {"isEditRequest": boolean, "editPrompt": string, "riskTags": string[], "severity": "low" | "medium" | "high", "reason": string}`;
 
     const response = await ai.models.generateContent({
       model: CHAT_MODEL,
@@ -802,6 +830,9 @@ Output ONLY strict JSON matching this schema: {"isEditRequest": boolean, "editPr
     res.json({
       isEditRequest: Boolean(result.isEditRequest),
       editPrompt: result.editPrompt || "",
+      riskTags: normalizeEditRiskTags(result.riskTags),
+      severity: normalizeEditSeverity(result.severity),
+      reason: typeof result.reason === "string" ? result.reason : "",
     });
   } catch (error) {
     console.error("Intent extraction error:", error);
@@ -855,6 +886,68 @@ Output ONLY strict JSON matching this schema: {"hasTimeContext": boolean, "timeD
   } catch (error) {
     console.error("Photo time extraction error:", error);
     res.status(500).json({ error: "Failed to extract photo time" });
+  }
+});
+
+app.post("/api/extract-photo-grounding", async (req, res) => {
+  const { text } = req.body || {};
+  if (!text || typeof text !== "string") {
+    res.status(400).json({ error: "Missing text payload" });
+    return;
+  }
+
+  try {
+    const ai = createGeminiClient();
+    const systemInstruction = `You extract grounding details about a photo memory from user text.
+The input may be a single latest message or several early user messages from the same conversation.
+Today's date is ${new Date().toISOString().slice(0, 10)}.
+Only extract details that are explicitly stated or very lightly implied by the user's words.
+Track these slots:
+- when the photo or memory happened
+- what was happening
+- who was involved
+- where it happened
+- feelings or emotional tone tied to the memory
+If a slot is not present, leave its text empty.
+Keep extracted text short and in the same language as the user.
+For timing:
+- set hasTimeContext to true only if useful timing context is present
+- set timeDescription to a short timing phrase from the user's words
+- set approxYears to a non-negative number only when it can be inferred reasonably; otherwise null
+- set ageBucket using exactly one of: "unknown", "within_1_year", "one_to_five_years", "five_to_ten_years", "ten_plus_years"
+Output ONLY strict JSON matching this schema:
+{"hasTimeContext": boolean, "timeDescription": string, "approxYears": number | null, "ageBucket": "unknown" | "within_1_year" | "one_to_five_years" | "five_to_ten_years" | "ten_plus_years", "when": string, "what": string, "who": string, "where": string, "feelings": string}`;
+
+    const response = await ai.models.generateContent({
+      model: CHAT_MODEL,
+      contents: [{ role: "user", parts: [{ text }] }],
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+      },
+    });
+
+    const outputText = response.text || "{}";
+    const result = JSON.parse(outputText);
+    const approxYears =
+      typeof result.approxYears === "number" && Number.isFinite(result.approxYears)
+        ? Math.max(0, result.approxYears)
+        : null;
+
+    res.json({
+      hasTimeContext: Boolean(result.hasTimeContext),
+      timeDescription: typeof result.timeDescription === "string" ? result.timeDescription : "",
+      approxYears,
+      ageBucket: normalizePhotoAgeBucket(result.ageBucket),
+      when: typeof result.when === "string" ? result.when : "",
+      what: typeof result.what === "string" ? result.what : "",
+      who: typeof result.who === "string" ? result.who : "",
+      where: typeof result.where === "string" ? result.where : "",
+      feelings: typeof result.feelings === "string" ? result.feelings : "",
+    });
+  } catch (error) {
+    console.error("Photo grounding extraction error:", error);
+    res.status(500).json({ error: "Failed to extract photo grounding" });
   }
 });
 

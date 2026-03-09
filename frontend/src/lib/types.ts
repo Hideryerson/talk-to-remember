@@ -40,6 +40,20 @@ export interface PhotoTimeContext {
   approxYears: number | null;
 }
 
+export type PhotoGroundingQuestionKey =
+  | "when"
+  | "what"
+  | "people_or_place"
+  | "feelings";
+
+export interface PhotoGroundingDetails {
+  when: string | null;
+  what: string | null;
+  who: string | null;
+  where: string | null;
+  feelings: string | null;
+}
+
 export interface Conversation {
   id: string;
   userId: string;
