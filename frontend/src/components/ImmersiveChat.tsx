@@ -3,7 +3,19 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { getToken } from "@/lib/auth";
 import { apiUrl, getBackendWsUrl } from "@/lib/api";
-import { Camera, Check, ChevronLeft, RotateCcw, Sparkles, X } from "lucide-react";
+import {
+  Camera,
+  Check,
+  ChevronLeft,
+  Clock3,
+  MapPinned,
+  PersonStanding,
+  RotateCcw,
+  ScanFace,
+  Sparkles,
+  Type as TypeIcon,
+  X,
+} from "lucide-react";
 import {
   LiveSession,
   DEFAULT_SYSTEM_INSTRUCTION,
@@ -241,7 +253,7 @@ function detectEditRiskTags(prompt: string): EditRiskTag[] {
   const patterns: Array<[EditRiskTag, RegExp]> = [
     [
       "face",
-      /\b(face|facial|eyes?|nose|mouth|smile|wrinkle|skin tone|look younger|look older)\b|脸|面部|五官|眼睛|鼻子|嘴|微笑|表情|皱纹/iu,
+      /\b(face|facial|eyes?|nose|mouth|smile|wrinkle|skin tone|look younger|look older|glasses|sunglasses|eyewear)\b|脸|面部|五官|眼睛|鼻子|嘴|微笑|表情|皱纹|眼镜|墨镜/iu,
     ],
     [
       "body",
@@ -314,100 +326,71 @@ function normalizeEditAssessment(payload: any, prompt: string): EditAssessment {
   return { riskTags, severity, reason };
 }
 
-function getRiskTagLabel(tag: EditRiskTag) {
-  switch (tag) {
-    case "face":
-      return "Face";
-    case "body":
-      return "Body or appearance";
-    case "landmark":
-      return "Landmark or place cue";
-    case "signage":
-      return "Signage or text cue";
-    case "timestamp":
-      return "Date or time cue";
-    default:
-      return tag;
-  }
-}
-
-function getRiskTagDescription(tag: EditRiskTag) {
-  switch (tag) {
-    case "face":
-      return "Faces are strong identity anchors and often shape how people remember who was there.";
-    case "body":
-      return "Changes to appearance, clothing, or posture can shift how someone is remembered.";
-    case "landmark":
-      return "Place details can anchor where this memory happened.";
-    case "signage":
-      return "Text and signs can preserve event and location cues.";
-    case "timestamp":
-      return "Dates or time marks can help anchor when this happened.";
-    default:
-      return "";
-  }
-}
-
 function isOlderPhoto(ageBucket: PhotoAgeBucket | undefined) {
   return ageBucket === "five_to_ten_years" || ageBucket === "ten_plus_years";
 }
 
-function buildMemoryAnchorSummary(
-  photoTimeContext: PhotoTimeContext | null,
-  details: PhotoGroundingDetails
+function buildOlderPhotoWarningLabel(photoTimeContext: PhotoTimeContext | null) {
+  if (!photoTimeContext || !isOlderPhoto(photoTimeContext.ageBucket)) {
+    return null;
+  }
+
+  if (typeof photoTimeContext.approxYears === "number" && Number.isFinite(photoTimeContext.approxYears)) {
+    const roundedYears = Math.max(5, Math.round(photoTimeContext.approxYears));
+    return `This photo is from ${roundedYears} ${roundedYears === 1 ? "year" : "years"} ago`;
+  }
+
+  return "Photo is 5+ years old";
+}
+
+function buildWarningTags(
+  assessment: EditAssessment,
+  olderPhoto: boolean,
+  photoTimeContext: PhotoTimeContext | null
 ) {
-  const anchors: string[] = [];
-  if (photoTimeContext?.timeDescription) {
-    anchors.push(`timing: ${photoTimeContext.timeDescription}`);
+  const tags: Array<{ key: string; label: string }> = [];
+
+  if (assessment.riskTags.includes("face")) {
+    tags.push({ key: "face", label: "Face warning" });
   }
-  if (hasGroundingValue(details.what)) {
-    anchors.push(`moment: ${details.what}`);
+  if (olderPhoto) {
+    tags.push({
+      key: "older-photo",
+      label: buildOlderPhotoWarningLabel(photoTimeContext) || "Photo is 5+ years old",
+    });
   }
-  if (hasGroundingValue(details.who)) {
-    anchors.push(`people: ${details.who}`);
-  } else if (hasGroundingValue(details.where)) {
-    anchors.push(`place: ${details.where}`);
+  if (assessment.riskTags.includes("landmark")) {
+    tags.push({ key: "landmark", label: "Landmark warning" });
   }
-  if (hasGroundingValue(details.feelings)) {
-    anchors.push(`feeling: ${details.feelings}`);
+  if (assessment.riskTags.includes("signage")) {
+    tags.push({ key: "signage", label: "Text/sign warning" });
   }
-  return anchors;
+  if (assessment.riskTags.includes("timestamp")) {
+    tags.push({ key: "timestamp", label: "Date/time warning" });
+  }
+  if (assessment.riskTags.includes("body")) {
+    tags.push({ key: "body", label: "Body warning" });
+  }
+
+  return tags;
 }
 
-function buildAgeReminder(photoTimeContext: PhotoTimeContext | null) {
-  if (!photoTimeContext) return null;
-  if (typeof photoTimeContext.approxYears === "number" && photoTimeContext.approxYears >= 5) {
-    return `This seems to be a photo from about ${photoTimeContext.approxYears} years ago. Older memories can rely on visual cues that edits may change.`;
+function renderWarningTagIcon(tagKey: string) {
+  switch (tagKey) {
+    case "face":
+      return <ScanFace size={16} strokeWidth={2} />;
+    case "older-photo":
+    case "timestamp":
+      return <Clock3 size={16} strokeWidth={2} />;
+    case "landmark":
+      return <MapPinned size={16} strokeWidth={2} />;
+    case "signage":
+      return <TypeIcon size={16} strokeWidth={2} />;
+    case "body":
+      return <PersonStanding size={16} strokeWidth={2} />;
+    default:
+      return null;
   }
-  if (isOlderPhoto(photoTimeContext.ageBucket) && photoTimeContext.timeDescription) {
-    return `This seems to be a photo from ${photoTimeContext.timeDescription}. Older memories can rely on visual cues that edits may change.`;
-  }
-  return null;
-}
-
-function buildEditModalCopy(assessment: EditAssessment, olderMemory: boolean) {
-  if (assessment.severity === "high") {
-    return {
-      title: "High-Impact Edit",
-      body: olderMemory
-        ? "This edit could change identity or key memory cues in an older photo."
-        : "This edit could change identity or key memory cues in the photo.",
-    };
-  }
-
-  if (assessment.severity === "medium") {
-    return {
-      title: "Review This Edit",
-      body: olderMemory
-        ? "This edit may remove cues that help you recognize an older memory."
-        : "This edit may remove cues that help the photo stay grounded in time or place.",
-    };
-  }
-
-  return {
-    title: "Confirm Edit",
-    body: "You can refine the instruction below before applying it to the active photo.",
-  };
 }
 
 export default function ImmersiveChat({
@@ -448,8 +431,6 @@ export default function ImmersiveChat({
     severity: "low",
     reason: "",
   });
-  const [editRationale, setEditRationale] = useState("");
-  const [isAssessingEdit, setIsAssessingEdit] = useState(false);
   const [photoTimeContext, setPhotoTimeContext] = useState<PhotoTimeContext | null>(null);
   const [photoGroundingDetails, setPhotoGroundingDetails] = useState<PhotoGroundingDetails>(
     createEmptyGroundingDetails()
@@ -538,8 +519,6 @@ export default function ImmersiveChat({
     pendingEditPromptRef.current = null;
     setPendingEditAssessment({ riskTags: [], severity: "low", reason: "" });
     pendingEditAssessmentRef.current = { riskTags: [], severity: "low", reason: "" };
-    setEditRationale("");
-    setIsAssessingEdit(false);
     if (notifyBackend) {
       liveSessionRef.current?.cancelEditConfirm();
     }
@@ -552,7 +531,6 @@ export default function ImmersiveChat({
     pendingEditPromptRef.current = normalizedInstruction;
     setPendingEditAssessment(assessment);
     pendingEditAssessmentRef.current = assessment;
-    setEditRationale("");
     return assessment;
   }, []);
 
@@ -560,7 +538,6 @@ export default function ImmersiveChat({
     const normalizedInstruction = instruction.trim();
     if (!normalizedInstruction) return;
 
-    setIsAssessingEdit(true);
     try {
       const response = await fetch(apiUrl("/api/extract-edit-intent"), {
         method: "POST",
@@ -584,8 +561,6 @@ export default function ImmersiveChat({
       pendingEditAssessmentRef.current = assessment;
     } catch (err) {
       log("Edit assessment refinement failed:", err);
-    } finally {
-      setIsAssessingEdit(false);
     }
   }, []);
 
@@ -1607,13 +1582,6 @@ ${profileContext ? `\n\nAbout this user: ${profileContext}` : ""}${historyContex
     const editPrompt = pendingEditPromptRef.current?.trim();
     const session = liveSessionRef.current;
     if (!editPrompt || !session) return;
-    const rationale = editRationale.trim();
-    const olderMemory = isOlderPhoto(photoTimeContextRef.current?.ageBucket);
-    const requiresRationale =
-      pendingEditAssessmentRef.current.severity !== "low" || olderMemory;
-    if (requiresRationale && !rationale) {
-      return;
-    }
 
     const activeVersion = imageVersionsRef.current[currentImageIndexRef.current];
     if (!activeVersion?.dataUrl?.includes(",")) {
@@ -1622,23 +1590,6 @@ ${profileContext ? `\n\nAbout this user: ${profileContext}` : ""}${historyContex
     }
 
     const base64 = activeVersion.dataUrl.split(",")[1];
-    const memoryAnchors = buildMemoryAnchorSummary(
-      photoTimeContextRef.current,
-      photoGroundingDetailsRef.current
-    );
-    const finalEditPrompt = [
-      editPrompt,
-      rationale
-        ? `Additional guidance: Prioritize this intention while editing: ${rationale}.`
-        : null,
-      memoryAnchors.length > 0
-        ? `Additional guidance: Preserve other recognizable memory anchors where possible: ${memoryAnchors.join(
-            "; "
-          )}.`
-        : null,
-    ]
-      .filter(Boolean)
-      .join("\n\n");
 
     setShowEditConfirm(false);
     setIsEditing(true);
@@ -1652,7 +1603,7 @@ ${profileContext ? `\n\nAbout this user: ${profileContext}` : ""}${historyContex
 
     clearUserTranscriptCommitTimer();
     pendingUserTranscriptRef.current = "";
-    session.confirmEdit(finalEditPrompt, base64, imageMimeTypeRef.current);
+    session.confirmEdit(editPrompt, base64, imageMimeTypeRef.current);
     const micReady = await session.startAudioInput();
     if (!micReady) {
       setLiveError("Microphone failed to restart for continued conversation.");
@@ -1717,13 +1668,9 @@ ${profileContext ? `\n\nAbout this user: ${profileContext}` : ""}${historyContex
       sessionState === "listening" ||
       awaitingFirstAssistantTurn);
   const olderMemoryEdit = isOlderPhoto(photoTimeContext?.ageBucket);
-  const editModalCopy = buildEditModalCopy(pendingEditAssessment, olderMemoryEdit);
-  const ageReminder = buildAgeReminder(photoTimeContext);
-  const memoryAnchorPreview = buildMemoryAnchorSummary(photoTimeContext, photoGroundingDetails);
-  const rationaleRequired = pendingEditAssessment.severity !== "low" || olderMemoryEdit;
-  const confirmEditDisabled =
-    !pendingEditPrompt?.trim() ||
-    (rationaleRequired && editRationale.trim().length === 0);
+  const warningTags = buildWarningTags(pendingEditAssessment, olderMemoryEdit, photoTimeContext);
+  const modalTitle = warningTags.length > 0 ? "Sensitive Edit Warning" : "Confirm Edit";
+  const confirmEditDisabled = !pendingEditPrompt?.trim();
 
   // Loading state - with SF Symbol style icon
   if (!hydrated) {
@@ -1877,58 +1824,29 @@ ${profileContext ? `\n\nAbout this user: ${profileContext}` : ""}${historyContex
       {showEditConfirm && pendingEditPrompt && !isEditing && (
         <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-[88vw] max-w-md">
           <div className="bg-white/40 backdrop-blur-2xl border border-white/50 rounded-3xl shadow-xl overflow-hidden p-1 shadow-[0_8px_32px_rgba(0,0,0,0.12)]">
-            <div className="p-5 pb-4">
-              <h3 className="text-lg font-semibold text-[#1d1d1f] mb-1">{editModalCopy.title}</h3>
-              <p className="text-sm text-[#1d1d1f]/80 mt-1">
-                {editModalCopy.body}
-              </p>
-              {pendingEditAssessment.reason ? (
-                <p className="text-sm text-[#1d1d1f]/70 mt-3">{pendingEditAssessment.reason}</p>
-              ) : null}
+            <div className="p-5 pb-2">
+              <h3 className="text-[1.65rem] leading-none font-semibold text-[#1d1d1f]">
+                {modalTitle}
+              </h3>
             </div>
 
-            {(ageReminder || memoryAnchorPreview.length > 0) && (
-              <div className="px-5 pb-4 space-y-3">
-                {ageReminder ? (
-                  <div className="rounded-2xl bg-amber-50/90 border border-amber-200 px-4 py-3 text-sm text-amber-900">
-                    {ageReminder}
-                  </div>
-                ) : null}
-                {memoryAnchorPreview.length > 0 ? (
-                  <div className="rounded-2xl bg-white/55 border border-white/70 px-4 py-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#1d1d1f]/55 mb-2">
-                      Memory Anchors
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {memoryAnchorPreview.map((anchor) => (
-                        <span
-                          key={anchor}
-                          className="px-3 py-1.5 rounded-full bg-[#1d1d1f]/6 text-[#1d1d1f]/80 text-xs"
-                        >
-                          {anchor}
-                        </span>
-                      ))}
+            {warningTags.length > 0 ? (
+              <div className="px-5 pb-4">
+                <div className="flex flex-wrap gap-2">
+                  {warningTags.map((tag) => (
+                    <div
+                      key={tag.key}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-[#eef0f6] border border-white/80 px-3 py-2 text-sm text-[#1d1d1f]"
+                    >
+                      <span className="text-[#6b7280]">{renderWarningTagIcon(tag.key)}</span>
+                      <span>{tag.label}</span>
                     </div>
-                  </div>
-                ) : null}
+                  ))}
+                </div>
               </div>
-            )}
+            ) : null}
 
-            {pendingEditAssessment.riskTags.length > 0 && (
-              <div className="px-5 pb-4 space-y-2">
-                {pendingEditAssessment.riskTags.map((tag) => (
-                  <div
-                    key={tag}
-                    className="rounded-2xl bg-white/55 border border-white/70 px-4 py-3"
-                  >
-                    <p className="text-sm font-medium text-[#1d1d1f]">{getRiskTagLabel(tag)}</p>
-                    <p className="text-xs text-[#1d1d1f]/70 mt-1">{getRiskTagDescription(tag)}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <div className="px-5 mb-4 relative group">
+            <div className="px-5 mb-5 relative group">
               <label className="block text-xs font-semibold uppercase tracking-[0.08em] text-[#1d1d1f]/55 mb-2">
                 Edit Instruction
               </label>
@@ -1944,26 +1862,6 @@ ${profileContext ? `\n\nAbout this user: ${profileContext}` : ""}${historyContex
                 }}
                 className="w-full h-24 p-4 rounded-2xl bg-white/50 border border-white/60 text-[#1d1d1f] text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#007aff]/50 transition-shadow pointer-events-auto shadow-inner"
               />
-              {isAssessingEdit ? (
-                <p className="text-xs text-[#1d1d1f]/50 mt-2">Updating guidance...</p>
-              ) : null}
-            </div>
-
-            <div className="px-5 mb-5 relative group">
-              <label className="block text-xs font-semibold uppercase tracking-[0.08em] text-[#1d1d1f]/55 mb-2">
-                {rationaleRequired ? "What should this edit preserve?*" : "What should this edit preserve or express?"}
-              </label>
-              <textarea
-                value={editRationale}
-                onChange={(e) => setEditRationale(e.target.value)}
-                placeholder="e.g. Keep my mother's face recognizable and preserve the graduation banner."
-                className="w-full h-20 p-4 rounded-2xl bg-white/50 border border-white/60 text-[#1d1d1f] text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#007aff]/50 transition-shadow pointer-events-auto shadow-inner"
-              />
-              <p className="text-xs text-[#1d1d1f]/55 mt-2">
-                {rationaleRequired
-                  ? "Required for higher-impact edits or older memories."
-                  : "Optional, but it helps the edit stay aligned with the memory."}
-              </p>
             </div>
 
             <div className="flex gap-2 p-2">

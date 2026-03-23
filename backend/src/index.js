@@ -809,7 +809,7 @@ If YES:
 - set severity to "high", "medium", or "low"
 - write one short reason explaining the main cue at risk
 Risk guidance:
-- face changes are usually high risk
+- face changes are usually high risk, including edits to glasses, sunglasses, eyes, smiles, or other facial accessories/features
 - body changes are usually medium risk unless they strongly change identity
 - landmark, signage, or timestamp changes are usually medium risk because they can remove place/time cues
 - if multiple risky cues are involved, prefer the higher severity
